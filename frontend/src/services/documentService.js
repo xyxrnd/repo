@@ -104,29 +104,6 @@ class DocumentService {
   download(id) {
     window.open(API_ENDPOINTS.DOCUMENT_DOWNLOAD(id), "_blank");
   }
-
-  /**
-   * Ambil halaman-halaman PDF dari dokumen
-   * @param {string} id - Document ID
-   * @returns {Promise<Array>} - Array of page filenames
-   */
-  async getPages(id) {
-    const response = await fetch(API_ENDPOINTS.DOCUMENT_PAGES(id));
-    if (!response.ok) {
-      throw new Error("Gagal mengambil halaman dokumen");
-    }
-    return response.json();
-  }
-
-  /**
-   * Dapatkan URL untuk preview halaman PDF
-   * @param {string} id - Document ID
-   * @param {string} page - Page filename
-   * @returns {string} - Preview URL
-   */
-  getPreviewUrl(id, page) {
-    return API_ENDPOINTS.DOCUMENT_PREVIEW(id, page);
-  }
 }
 
 // Export functions untuk backward compatibility
@@ -136,7 +113,6 @@ export const createDocument = (formData) => documentService.create(formData);
 export const updateDocument = (id, formData) => documentService.update(id, formData);
 export const deleteDocument = (id) => documentService.delete(id);
 export const downloadDocument = (id) => documentService.download(id);
-export const getDocumentPages = (id) => documentService.getPages(id);
 
 export const documentService = new DocumentService();
 export default documentService;

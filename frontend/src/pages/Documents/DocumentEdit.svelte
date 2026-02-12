@@ -5,6 +5,8 @@
         getDocumentById,
         updateDocument,
     } from "../../services/documentService.js";
+    import fakultasService from "../../services/fakultasService.js";
+    import prodiService from "../../services/prodiService.js";
 
     export let params = {};
 
@@ -12,17 +14,35 @@
     let author = "";
     let fileType = "";
     let status = "draft";
-    let file = null;
-    let currentFileName = "";
-    let confirm = false;
+    let fakultasId = "";
+    let prodiId = "";
+    let dosenPembimbing = "";
+    let files = [];
+    let existingFiles = [];
+    let confirmCheck = false;
 
     let loading = false;
     let loadingData = true;
     let error = "";
 
+    let fakultasList = [];
+    let prodiList = [];
+    let loadingFakultas = true;
+    let loadingProdi = false;
+
     onMount(async () => {
-        await loadDocument();
+        await Promise.all([loadFakultas(), loadDocument()]);
     });
+
+    async function loadFakultas() {
+        try {
+            fakultasList = await fakultasService.getAll();
+        } catch (e) {
+            console.error("Gagal memuat fakultas:", e);
+        } finally {
+            loadingFakultas = false;
+        }
+    }
 
     async function loadDocument() {
         try {
@@ -32,7 +52,15 @@
             author = doc.penulis;
             fileType = doc.jenis_file;
             status = doc.status;
-            currentFileName = "File saat ini tersimpan di server";
+            fakultasId = doc.fakultas_id || "";
+            prodiId = doc.prodi_id || "";
+            dosenPembimbing = doc.dosen_pembimbing || "";
+            existingFiles = doc.files || [];
+
+            // Muat prodi berdasarkan fakultas yang sudah ada
+            if (fakultasId) {
+                await loadProdi(fakultasId);
+            }
         } catch (e) {
             error = "Gagal memuat data dokumen: " + e.message;
         } finally {
@@ -40,14 +68,50 @@
         }
     }
 
+    async function loadProdi(fakId) {
+        try {
+            loadingProdi = true;
+            prodiList = await prodiService.getAll(fakId);
+        } catch (e) {
+            console.error("Gagal memuat prodi:", e);
+        } finally {
+            loadingProdi = false;
+        }
+    }
+
+    async function onFakultasChange() {
+        prodiId = "";
+        prodiList = [];
+        if (fakultasId) {
+            await loadProdi(fakultasId);
+        }
+    }
+
     function handleFileChange(e) {
-        file = e.target.files[0];
+        files = Array.from(e.target.files);
+    }
+
+    function removeNewFile(index) {
+        files = files.filter((_, i) => i !== index);
+        /** @type {HTMLInputElement | null} */
+        const input = /** @type {HTMLInputElement} */ (
+            document.getElementById("file-input-edit")
+        );
+        if (input) input.value = "";
+    }
+
+    function formatFileSize(bytes) {
+        if (!bytes || bytes === 0) return "0 B";
+        const k = 1024;
+        const sizes = ["B", "KB", "MB", "GB"];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
     }
 
     async function handleSubmit() {
         error = "";
 
-        if (!title || !author || !fileType || !confirm) {
+        if (!title || !author || !fileType || !confirmCheck) {
             error = "Semua field wajib diisi dan dikonfirmasi.";
             return;
         }
@@ -59,9 +123,20 @@
         formData.append("author", author);
         formData.append("category", fileType);
         formData.append("status", status);
+        formData.append("dosen_pembimbing", dosenPembimbing);
 
-        if (file) {
-            formData.append("file", file);
+        if (fakultasId) {
+            formData.append("fakultas_id", fakultasId);
+        }
+        if (prodiId) {
+            formData.append("prodi_id", prodiId);
+        }
+
+        // Append new files jika ada
+        if (files.length > 0) {
+            for (const file of files) {
+                formData.append("files", file);
+            }
         }
 
         try {
@@ -117,7 +192,6 @@
             ></div>
         </div>
     {:else}
-        <!-- Content -->
         {#if error}
             <div
                 class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4 text-red-700 dark:text-red-400"
@@ -142,14 +216,16 @@
                     <!-- Judul -->
                     <div>
                         <label
+                            for="edit-judul"
                             class="block text-sm font-bold mb-2 text-slate-700 dark:text-slate-300"
                         >
                             Judul Dokumen <span class="text-red-500">*</span>
                         </label>
                         <input
+                            id="edit-judul"
                             bind:value={title}
                             class="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border-none rounded-lg focus:ring-2 focus:ring-primary/50 text-sm transition-all"
-                            placeholder="Contoh: Laporan Keuangan Q3 2023"
+                            placeholder="Contoh: Analisis Pengaruh Digitalisasi..."
                             type="text"
                         />
                     </div>
@@ -158,11 +234,13 @@
                     <div class="grid md:grid-cols-2 gap-6">
                         <div>
                             <label
+                                for="edit-penulis"
                                 class="block text-sm font-bold mb-2 text-slate-700 dark:text-slate-300"
                             >
                                 Penulis <span class="text-red-500">*</span>
                             </label>
                             <input
+                                id="edit-penulis"
                                 bind:value={author}
                                 class="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border-none rounded-lg focus:ring-2 focus:ring-primary/50 text-sm transition-all"
                                 placeholder="Masukkan nama penulis"
@@ -172,32 +250,121 @@
 
                         <div>
                             <label
+                                for="edit-jenis"
                                 class="block text-sm font-bold mb-2 text-slate-700 dark:text-slate-300"
                             >
-                                Jenis File <span class="text-red-500">*</span>
+                                Jenis Dokumen <span class="text-red-500">*</span
+                                >
                             </label>
                             <select
+                                id="edit-jenis"
                                 bind:value={fileType}
                                 class="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border-none rounded-lg focus:ring-2 focus:ring-primary/50 text-sm transition-all"
                             >
-                                <option value="">Pilih jenis file</option>
-                                <option value="pdf">PDF</option>
-                                <option value="docx">DOCX</option>
-                                <option value="xlsx">XLSX</option>
-                                <option value="pptx">PPTX</option>
-                                <option value="zip">ZIP</option>
+                                <option value="">Pilih jenis dokumen</option>
+                                <option value="skripsi">Skripsi</option>
+                                <option value="tesis">Tesis</option>
+                                <option value="jurnal">Jurnal</option>
                             </select>
                         </div>
+                    </div>
+
+                    <!-- Fakultas + Prodi -->
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <div>
+                            <label
+                                for="edit-fakultas"
+                                class="block text-sm font-bold mb-2 text-slate-700 dark:text-slate-300"
+                            >
+                                Fakultas
+                            </label>
+                            {#if loadingFakultas}
+                                <div
+                                    class="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-sm text-slate-400"
+                                >
+                                    Memuat data fakultas...
+                                </div>
+                            {:else}
+                                <select
+                                    id="edit-fakultas"
+                                    bind:value={fakultasId}
+                                    on:change={onFakultasChange}
+                                    class="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border-none rounded-lg focus:ring-2 focus:ring-primary/50 text-sm transition-all"
+                                >
+                                    <option value=""
+                                        >Pilih Fakultas (Opsional)</option
+                                    >
+                                    {#each fakultasList as fak}
+                                        <option value={fak.id}
+                                            >{fak.nama}</option
+                                        >
+                                    {/each}
+                                </select>
+                            {/if}
+                        </div>
+
+                        <div>
+                            <label
+                                for="edit-prodi"
+                                class="block text-sm font-bold mb-2 text-slate-700 dark:text-slate-300"
+                            >
+                                Program Studi
+                            </label>
+                            {#if loadingProdi}
+                                <div
+                                    class="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-sm text-slate-400"
+                                >
+                                    Memuat data prodi...
+                                </div>
+                            {:else}
+                                <select
+                                    id="edit-prodi"
+                                    bind:value={prodiId}
+                                    class="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border-none rounded-lg focus:ring-2 focus:ring-primary/50 text-sm transition-all"
+                                    disabled={!fakultasId}
+                                >
+                                    <option value=""
+                                        >{fakultasId
+                                            ? "Pilih Program Studi (Opsional)"
+                                            : "Pilih Fakultas terlebih dahulu"}</option
+                                    >
+                                    {#each prodiList as prodi}
+                                        <option value={prodi.id}
+                                            >{prodi.nama}</option
+                                        >
+                                    {/each}
+                                </select>
+                            {/if}
+                        </div>
+                    </div>
+
+                    <!-- Dosen Pembimbing -->
+                    <div>
+                        <label
+                            for="edit-dosen"
+                            class="block text-sm font-bold mb-2 text-slate-700 dark:text-slate-300"
+                        >
+                            Dosen Pembimbing
+                        </label>
+                        <input
+                            id="edit-dosen"
+                            bind:value={dosenPembimbing}
+                            class="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border-none rounded-lg focus:ring-2 focus:ring-primary/50 text-sm transition-all"
+                            placeholder="Contoh: Prof. Dr. Ahmad, M.Si"
+                            type="text"
+                        />
                     </div>
 
                     <!-- Status -->
                     <div>
                         <label
+                            for="edit-status"
                             class="block text-sm font-bold mb-2 text-slate-700 dark:text-slate-300"
                         >
                             Status <span class="text-red-500">*</span>
                         </label>
                         <select
+                            id="edit-status"
                             bind:value={status}
                             class="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border-none rounded-lg focus:ring-2 focus:ring-primary/50 text-sm transition-all"
                         >
@@ -206,37 +373,112 @@
                         </select>
                     </div>
 
-                    <!-- Upload File (Optional) -->
+                    <!-- Existing Files -->
+                    {#if existingFiles.length > 0}
+                        <div>
+                            <p
+                                class="text-sm font-bold mb-2 text-slate-700 dark:text-slate-300"
+                            >
+                                File Saat Ini
+                            </p>
+                            <div class="space-y-2">
+                                {#each existingFiles as ef}
+                                    <div
+                                        class="flex items-center gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800"
+                                    >
+                                        <span
+                                            class="material-symbols-outlined text-blue-600 text-base"
+                                            >description</span
+                                        >
+                                        <span
+                                            class="text-sm text-blue-700 dark:text-blue-400 truncate"
+                                            >{ef.file_name}</span
+                                        >
+                                        <span
+                                            class="text-xs text-blue-500 shrink-0"
+                                            >({formatFileSize(
+                                                ef.file_size,
+                                            )})</span
+                                        >
+                                    </div>
+                                {/each}
+                            </div>
+                        </div>
+                    {/if}
+
+                    <!-- Upload File (Optional - replace) -->
                     <div>
                         <label
+                            for="file-input-edit"
                             class="block text-sm font-bold mb-2 text-slate-700 dark:text-slate-300"
                         >
                             Ganti File (Opsional)
                         </label>
                         <div
-                            class="mb-3 p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-lg text-sm flex items-center gap-2"
+                            class="mb-2 p-3 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 rounded-lg text-sm flex items-center gap-2"
                         >
                             <span class="material-symbols-outlined text-base"
-                                >info</span
+                                >warning</span
                             >
-                            {currentFileName}. Biarkan kosong jika tidak ingin
-                            mengganti file.
+                            Jika Anda mengunggah file baru, file lama akan diganti.
+                            Biarkan kosong jika tidak ingin mengganti.
                         </div>
                         <input
+                            id="file-input-edit"
                             type="file"
                             on:change={handleFileChange}
+                            accept=".pdf,.doc,.docx"
+                            multiple
                             class="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border-none rounded-lg focus:ring-2 focus:ring-primary/50 text-sm transition-all file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary file:text-white file:font-semibold hover:file:bg-primary/90"
                         />
-                        {#if file}
-                            <p
-                                class="mt-2 text-sm text-green-600 flex items-center gap-1"
-                            >
-                                <span
-                                    class="material-symbols-outlined text-base"
-                                    >check_circle</span
+                        <p class="mt-1 text-xs text-slate-400">
+                            Format: PDF, DOC, DOCX (Maks 50MB per file). Anda
+                            dapat memilih beberapa file.
+                        </p>
+
+                        {#if files.length > 0}
+                            <div class="mt-3 space-y-2">
+                                <p
+                                    class="text-sm font-bold text-slate-700 dark:text-slate-300"
                                 >
-                                File baru dipilih: {file.name}
-                            </p>
+                                    {files.length} file baru dipilih:
+                                </p>
+                                {#each files as file, i}
+                                    <div
+                                        class="flex items-center justify-between px-3 py-2 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800"
+                                    >
+                                        <div
+                                            class="flex items-center gap-2 min-w-0"
+                                        >
+                                            <span
+                                                class="material-symbols-outlined text-green-600 text-base shrink-0"
+                                                >check_circle</span
+                                            >
+                                            <span
+                                                class="text-sm text-green-700 dark:text-green-400 truncate"
+                                                >{file.name}</span
+                                            >
+                                            <span
+                                                class="text-xs text-green-500 shrink-0"
+                                                >({formatFileSize(
+                                                    file.size,
+                                                )})</span
+                                            >
+                                        </div>
+                                        <button
+                                            type="button"
+                                            on:click={() => removeNewFile(i)}
+                                            class="text-red-400 hover:text-red-600 transition-colors shrink-0 ml-2"
+                                            title="Hapus file"
+                                        >
+                                            <span
+                                                class="material-symbols-outlined text-base"
+                                                >close</span
+                                            >
+                                        </button>
+                                    </div>
+                                {/each}
+                            </div>
                         {/if}
                     </div>
 
@@ -246,13 +488,17 @@
                     >
                         <input
                             type="checkbox"
-                            bind:checked={confirm}
+                            bind:checked={confirmCheck}
+                            id="edit-confirm"
                             class="mt-0.5 w-5 h-5 text-primary rounded focus:ring-2 focus:ring-primary/50"
                         />
-                        <p class="text-sm text-slate-700 dark:text-slate-300">
+                        <label
+                            for="edit-confirm"
+                            class="text-sm text-slate-700 dark:text-slate-300"
+                        >
                             Saya mengonfirmasi bahwa perubahan data ini sudah
                             benar.
-                        </p>
+                        </label>
                     </div>
 
                     <!-- Action -->

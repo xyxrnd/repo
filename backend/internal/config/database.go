@@ -31,6 +31,58 @@ func ConnectDB() {
 
 	DB = pool
 	log.Println("✅ Database connected successfully")
+
+	// Auto-migrate: buat tabel yang belum ada
+	runMigrations(pool)
+}
+
+// runMigrations membuat tabel yang belum ada di database
+func runMigrations(pool *pgxpool.Pool) {
+	queries := []string{
+		`CREATE TABLE IF NOT EXISTS fakultas (
+			id UUID PRIMARY KEY,
+			nama VARCHAR(255) NOT NULL,
+			kode VARCHAR(50) NOT NULL UNIQUE,
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS prodi (
+			id UUID PRIMARY KEY,
+			nama VARCHAR(255) NOT NULL,
+			kode VARCHAR(50) NOT NULL UNIQUE,
+			fakultas_id UUID NOT NULL REFERENCES fakultas(id) ON DELETE RESTRICT,
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_fakultas_kode ON fakultas(kode)`,
+		`CREATE INDEX IF NOT EXISTS idx_prodi_kode ON prodi(kode)`,
+		`CREATE INDEX IF NOT EXISTS idx_prodi_fakultas_id ON prodi(fakultas_id)`,
+		// Tambah kolom baru di documents (ALTER TABLE aman jika kolom sudah ada)
+		`ALTER TABLE documents ADD COLUMN IF NOT EXISTS fakultas_id UUID REFERENCES fakultas(id) ON DELETE SET NULL`,
+		`ALTER TABLE documents ADD COLUMN IF NOT EXISTS prodi_id UUID REFERENCES prodi(id) ON DELETE SET NULL`,
+		`ALTER TABLE documents ADD COLUMN IF NOT EXISTS dosen_pembimbing TEXT DEFAULT ''`,
+		// Tabel untuk multiple files per dokumen
+		`CREATE TABLE IF NOT EXISTS document_files (
+			id UUID PRIMARY KEY,
+			document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+			file_name VARCHAR(500) NOT NULL,
+			file_path VARCHAR(500) NOT NULL,
+			file_size BIGINT DEFAULT 0,
+			file_order INT DEFAULT 0,
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_document_files_doc_id ON document_files(document_id)`,
+		// Tambah kolom is_locked untuk fitur lock file
+		`ALTER TABLE document_files ADD COLUMN IF NOT EXISTS is_locked BOOLEAN DEFAULT FALSE`,
+	}
+
+	for _, q := range queries {
+		_, err := pool.Exec(context.Background(), q)
+		if err != nil {
+			log.Printf("⚠️ Migration warning: %v", err)
+		}
+	}
+	log.Println("✅ Database migrations completed")
 }
 
 // CloseDB menutup koneksi database

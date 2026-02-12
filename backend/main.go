@@ -36,12 +36,19 @@ func main() {
 	http.HandleFunc("/uploads", handlers.UploadHandler)
 	http.HandleFunc("/api/documents", handlers.DocumentsHandler)
 	http.HandleFunc("/api/documents/", handlers.DocumentByIdHandler)
-	http.HandleFunc("/api/documents/pages/", handlers.DocumentPagesHandler)
 
 	// --- File Routes ---
 	http.HandleFunc("/download/", handlers.DownloadHandler)
-	http.HandleFunc("/preview/split/", handlers.PreviewSplitHandler)
-	http.Handle("/split/", http.StripPrefix("/split/", http.FileServer(http.Dir("uploads/split"))))
+	// Serve uploaded files statically (for individual file downloads)
+	http.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("uploads"))))
+
+	// --- Fakultas Routes (Admin Only) ---
+	http.HandleFunc("/api/fakultas", middleware.AdminMiddleware(handlers.FakultasHandler))
+	http.HandleFunc("/api/fakultas/", middleware.AdminMiddleware(handlers.FakultasByIdHandler))
+
+	// --- Prodi Routes (Admin Only) ---
+	http.HandleFunc("/api/prodi", middleware.AdminMiddleware(handlers.ProdiHandler))
+	http.HandleFunc("/api/prodi/", middleware.AdminMiddleware(handlers.ProdiByIdHandler))
 
 	fmt.Println("========================================")
 	fmt.Println("  Repository UN - Backend Server")

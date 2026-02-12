@@ -34,13 +34,18 @@
                 <p
                     class="text-slate-500 dark:text-slate-400 text-xs font-normal"
                 >
-                    Document System
+                    Repository Akademik
                 </p>
             </div>
         </div>
 
         <!-- Navigation -->
         <nav class="flex flex-col gap-1">
+            <p
+                class="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider px-3 mb-1"
+            >
+                Utama
+            </p>
             <a
                 href="#/dashboard"
                 use:link
@@ -52,15 +57,48 @@
             <a
                 href="#/documents"
                 use:link
-                class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary/10 text-primary dark:bg-primary/20"
+                class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
-                <span
-                    class="material-symbols-outlined text-xl"
-                    style="font-variation-settings: 'FILL' 1">description</span
+                <span class="material-symbols-outlined text-xl"
+                    >description</span
                 >
-                <span class="text-sm font-semibold">Kelola Dokumen</span>
+                <span class="text-sm font-medium">Kelola Dokumen</span>
             </a>
+
             {#if user?.role === "admin"}
+                <hr class="border-slate-200 dark:border-slate-800 my-2" />
+                <p
+                    class="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider px-3 mb-1"
+                >
+                    Master Data
+                </p>
+                <a
+                    href="#/fakultas"
+                    use:link
+                    class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                    <span class="material-symbols-outlined text-xl"
+                        >account_balance</span
+                    >
+                    <span class="text-sm font-medium">Fakultas</span>
+                </a>
+                <a
+                    href="#/prodi"
+                    use:link
+                    class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                    <span class="material-symbols-outlined text-xl"
+                        >local_library</span
+                    >
+                    <span class="text-sm font-medium">Program Studi</span>
+                </a>
+
+                <hr class="border-slate-200 dark:border-slate-800 my-2" />
+                <p
+                    class="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider px-3 mb-1"
+                >
+                    Administrasi
+                </p>
                 <a
                     href="#/users"
                     use:link
@@ -91,14 +129,6 @@
             >
                 <span class="material-symbols-outlined text-xl">settings</span>
                 <span class="text-sm font-medium">Pengaturan</span>
-            </a>
-            <a
-                href="#/help"
-                use:link
-                class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            >
-                <span class="material-symbols-outlined text-xl">help</span>
-                <span class="text-sm font-medium">Bantuan</span>
             </a>
         </nav>
     </div>

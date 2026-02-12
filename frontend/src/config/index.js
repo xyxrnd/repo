@@ -24,9 +24,16 @@ export const API_ENDPOINTS = {
     // Documents
     DOCUMENTS: `${API_BASE_URL}/api/documents`,
     DOCUMENT_BY_ID: (id) => `${API_BASE_URL}/api/documents/${id}`,
-    DOCUMENT_PAGES: (id) => `${API_BASE_URL}/api/documents/pages/${id}`,
     DOCUMENT_DOWNLOAD: (id) => `${API_BASE_URL}/download/${id}`,
-    DOCUMENT_PREVIEW: (id, page) => `${API_BASE_URL}/preview/split/${id}/${page}`,
+    DOCUMENT_DOWNLOAD_ALL: (id) => `${API_BASE_URL}/api/documents/${id}/download-all`,
+
+    // Fakultas
+    FAKULTAS: `${API_BASE_URL}/api/fakultas`,
+    FAKULTAS_BY_ID: (id) => `${API_BASE_URL}/api/fakultas/${id}`,
+
+    // Prodi
+    PRODI: `${API_BASE_URL}/api/prodi`,
+    PRODI_BY_ID: (id) => `${API_BASE_URL}/api/prodi/${id}`,
 };
 
 // App Configuration
@@ -42,8 +49,11 @@ export const APP_CONFIG = {
     DEFAULT_PAGE_SIZE: 10,
 
     // File upload
-    MAX_FILE_SIZE: 10 * 1024 * 1024, // 10 MB
+    MAX_FILE_SIZE: 50 * 1024 * 1024, // 50 MB
     ALLOWED_FILE_TYPES: [".pdf", ".doc", ".docx"],
+
+    // Jenis Dokumen
+    DOCUMENT_TYPES: ["skripsi", "tesis", "jurnal"],
 };
 
 // Route paths
@@ -65,6 +75,8 @@ export const ROUTES = {
     DOCUMENTS_ADD: "/admin/documents/add",
     DOCUMENTS_EDIT: (id) => `/admin/documents/edit/${id}`,
     USERS: "/admin/users",
+    FAKULTAS: "/admin/fakultas",
+    PRODI: "/admin/prodi",
     REPORTS: "/reports",
     SETTINGS: "/settings",
 };

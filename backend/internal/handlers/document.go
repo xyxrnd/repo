@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"archive/zip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,7 +14,6 @@ import (
 	"repository-un/internal/config"
 	"repository-un/internal/middleware"
 	"repository-un/internal/models"
-	"repository-un/internal/utils"
 
 	"github.com/google/uuid"
 )
@@ -49,7 +49,15 @@ func DocumentByIdHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	middleware.EnableCORS(w)
 
-	id := strings.TrimPrefix(r.URL.Path, "/api/documents/")
+	path := strings.TrimPrefix(r.URL.Path, "/api/documents/")
+
+	// Cek apakah ini request download-all: /api/documents/{id}/download-all
+	if strings.HasSuffix(path, "/download-all") {
+		DownloadAllHandler(w, r)
+		return
+	}
+
+	id := path
 	if id == "" {
 		http.Error(w, "ID tidak valid", http.StatusBadRequest)
 		return
@@ -67,14 +75,21 @@ func DocumentByIdHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// listDocuments mengambil semua dokumen dari database
+// listDocuments mengambil semua dokumen dari database beserta fakultas, prodi, dan files
 func listDocuments(w http.ResponseWriter, r *http.Request) {
 	rows, err := config.DB.Query(context.Background(),
-		`SELECT id, judul, penulis, jenis_file, status, created_at
-		 FROM documents
-		 ORDER BY created_at DESC`)
+		`SELECT d.id, d.judul, d.penulis, d.jenis_file, d.status, d.created_at,
+		        COALESCE(d.fakultas_id::text, '') as fakultas_id,
+		        COALESCE(f.nama, '') as fakultas_nama,
+		        COALESCE(d.prodi_id::text, '') as prodi_id,
+		        COALESCE(p.nama, '') as prodi_nama,
+		        COALESCE(d.dosen_pembimbing, '') as dosen_pembimbing
+		 FROM documents d
+		 LEFT JOIN fakultas f ON d.fakultas_id = f.id
+		 LEFT JOIN prodi p ON d.prodi_id = p.id
+		 ORDER BY d.created_at DESC`)
 	if err != nil {
-		http.Error(w, "Gagal mengambil data", http.StatusInternalServerError)
+		http.Error(w, "Gagal mengambil data: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
@@ -90,11 +105,20 @@ func listDocuments(w http.ResponseWriter, r *http.Request) {
 			&d.JenisFile,
 			&d.Status,
 			&d.CreatedAt,
+			&d.FakultasID,
+			&d.FakultasNama,
+			&d.ProdiID,
+			&d.ProdiNama,
+			&d.DosenPembimbing,
 		)
 		if err != nil {
-			http.Error(w, "Gagal membaca data", http.StatusInternalServerError)
+			http.Error(w, "Gagal membaca data: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+
+		// Ambil files untuk dokumen ini
+		d.Files = getDocumentFiles(d.ID)
+
 		documents = append(documents, d)
 	}
 
@@ -102,40 +126,83 @@ func listDocuments(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(documents)
 }
 
+// getDocumentFiles mengambil semua file terkait dokumen
+func getDocumentFiles(documentID string) []models.DocumentFile {
+	rows, err := config.DB.Query(context.Background(),
+		`SELECT id, document_id, file_name, file_path, file_size, file_order, COALESCE(is_locked, false)
+		 FROM document_files
+		 WHERE document_id = $1
+		 ORDER BY file_order ASC`, documentID)
+	if err != nil {
+		return []models.DocumentFile{}
+	}
+	defer rows.Close()
+
+	files := []models.DocumentFile{}
+	for rows.Next() {
+		var f models.DocumentFile
+		err := rows.Scan(&f.ID, &f.DocumentID, &f.FileName, &f.FilePath, &f.FileSize, &f.FileOrder, &f.IsLocked)
+		if err != nil {
+			continue
+		}
+		files = append(files, f)
+	}
+	return files
+}
+
 // getDocumentById mengambil dokumen berdasarkan ID
 func getDocumentById(w http.ResponseWriter, r *http.Request, id string) {
 	var d models.Document
 	err := config.DB.QueryRow(context.Background(),
-		`SELECT id, judul, penulis, jenis_file, status, created_at
-		 FROM documents WHERE id = $1`, id).Scan(
+		`SELECT d.id, d.judul, d.penulis, d.jenis_file, d.status, d.created_at,
+		        COALESCE(d.fakultas_id::text, '') as fakultas_id,
+		        COALESCE(f.nama, '') as fakultas_nama,
+		        COALESCE(d.prodi_id::text, '') as prodi_id,
+		        COALESCE(p.nama, '') as prodi_nama,
+		        COALESCE(d.dosen_pembimbing, '') as dosen_pembimbing
+		 FROM documents d
+		 LEFT JOIN fakultas f ON d.fakultas_id = f.id
+		 LEFT JOIN prodi p ON d.prodi_id = p.id
+		 WHERE d.id = $1`, id).Scan(
 		&d.ID,
 		&d.Judul,
 		&d.Penulis,
 		&d.JenisFile,
 		&d.Status,
 		&d.CreatedAt,
+		&d.FakultasID,
+		&d.FakultasNama,
+		&d.ProdiID,
+		&d.ProdiNama,
+		&d.DosenPembimbing,
 	)
 
 	if err != nil {
 		http.Error(w, "Dokumen tidak ditemukan", http.StatusNotFound)
 		return
 	}
+
+	// Ambil files
+	d.Files = getDocumentFiles(d.ID)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(d)
 }
 
-// createDocument membuat dokumen baru dengan upload file
+// createDocument membuat dokumen baru dengan upload multiple files
 func createDocument(w http.ResponseWriter, r *http.Request) {
-	r.ParseMultipartForm(10 << 20) // 10 MB
+	r.ParseMultipartForm(100 << 20) // 100 MB max
 
 	judul := r.FormValue("title")
 	penulis := r.FormValue("author")
 	jenisFile := r.FormValue("category")
 	status := r.FormValue("status")
+	fakultasID := r.FormValue("fakultas_id")
+	prodiID := r.FormValue("prodi_id")
+	dosenPembimbing := r.FormValue("dosen_pembimbing")
 
 	if judul == "" || penulis == "" || jenisFile == "" {
-		http.Error(w, "Metadata tidak lengkap", http.StatusBadRequest)
+		http.Error(w, "Metadata tidak lengkap (judul, penulis, jenis_file wajib)", http.StatusBadRequest)
 		return
 	}
 
@@ -143,207 +210,298 @@ func createDocument(w http.ResponseWriter, r *http.Request) {
 		status = "draft"
 	}
 
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		http.Error(w, "File tidak ditemukan", http.StatusBadRequest)
-		return
+	// Pastikan folder uploads ada
+	os.MkdirAll("uploads", os.ModePerm)
+
+	docID := uuid.New()
+
+	// Parse lock info per file (comma-separated: "true,false,true")
+	fileLocks := strings.Split(r.FormValue("file_locks"), ",")
+
+	// Handle multiple files — simpan ke disk dulu, kumpulkan metadata
+	type savedFile struct {
+		FileName string
+		FilePath string
+		FileSize int64
+		Order    int
+		IsLocked bool
 	}
-	defer file.Close()
 
-	ext := filepath.Ext(header.Filename)
-	storedName := uuid.New().String() + ext
-	filePath := "uploads/" + storedName
+	var mainFilePath string
+	var savedFiles []savedFile
+	multiFiles := r.MultipartForm.File["files"]
 
-	dst, err := os.Create(filePath)
-	if err != nil {
-		http.Error(w, "Gagal menyimpan file", http.StatusInternalServerError)
-		return
-	}
-	defer dst.Close()
-
-	io.Copy(dst, file)
-
-	id := uuid.New()
-
-	// Validasi PDF jika file adalah PDF
-	if strings.ToLower(ext) == ".pdf" {
-		if err := utils.ValidatePDF(filePath); err != nil {
-			os.Remove(filePath) // Hapus file corrupt
-			http.Error(w, "File PDF rusak atau tidak valid: "+err.Error(), http.StatusBadRequest)
+	if len(multiFiles) == 0 {
+		// Fallback: coba single file dengan key "file"
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			http.Error(w, "File tidak ditemukan. Minimal 1 file harus diupload.", http.StatusBadRequest)
 			return
 		}
-
-		// Split PDF per halaman untuk preview
-		splitDir := filepath.Join("uploads", "split", id.String())
-		if err := utils.SplitPDF(filePath, splitDir); err != nil {
-			fmt.Println("Gagal memecah PDF:", err)
-			// Lanjut saja, ini fitur tambahan
-		}
-	}
-
-	query := `
-		INSERT INTO documents (id, judul, penulis, jenis_file, file_path, status)
-		VALUES ($1, $2, $3, $4, $5, $6)
-	`
-
-	_, err = config.DB.Exec(context.Background(), query,
-		id, judul, penulis, jenisFile, filePath, status,
-	)
-
-	if err != nil {
-		http.Error(w, "Gagal menyimpan metadata", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"id":         id,
-		"judul":      judul,
-		"penulis":    penulis,
-		"jenis_file": jenisFile,
-		"status":     status,
-	})
-}
-
-// updateDocument mengupdate dokumen
-func updateDocument(w http.ResponseWriter, r *http.Request, id string) {
-	r.ParseMultipartForm(10 << 20) // 10 MB
-
-	judul := r.FormValue("title")
-	penulis := r.FormValue("author")
-	jenisFile := r.FormValue("category")
-	status := r.FormValue("status")
-
-	if judul == "" || penulis == "" || jenisFile == "" {
-		http.Error(w, "Metadata tidak lengkap", http.StatusBadRequest)
-		return
-	}
-
-	if status == "" {
-		status = "draft"
-	}
-
-	// Cek apakah ada file baru
-	file, header, err := r.FormFile("file")
-	var filePath string
-
-	if err == nil {
-		// Ada file baru diupload
 		defer file.Close()
 
-		// Ambil path file lama untuk dihapus
-		var oldFilePath string
-		config.DB.QueryRow(context.Background(),
-			`SELECT file_path FROM documents WHERE id = $1`, id).Scan(&oldFilePath)
-
-		// Hapus file lama
-		if oldFilePath != "" {
-			os.Remove(oldFilePath)
-		}
-
-		// Simpan file baru
 		ext := filepath.Ext(header.Filename)
 		storedName := uuid.New().String() + ext
-		filePath = "uploads/" + storedName
+		mainFilePath = "uploads/" + storedName
 
-		dst, err := os.Create(filePath)
+		dst, err := os.Create(mainFilePath)
 		if err != nil {
 			http.Error(w, "Gagal menyimpan file", http.StatusInternalServerError)
 			return
 		}
 		defer dst.Close()
-
 		io.Copy(dst, file)
 
-		// Validasi PDF jika file adalah PDF
-		if strings.ToLower(ext) == ".pdf" {
-			if err := utils.ValidatePDF(filePath); err != nil {
-				os.Remove(filePath) // Hapus file corrupt
-				http.Error(w, "File PDF rusak atau tidak valid: "+err.Error(), http.StatusBadRequest)
-				return
+		isLocked := len(fileLocks) > 0 && fileLocks[0] == "true"
+		savedFiles = append(savedFiles, savedFile{
+			FileName: header.Filename,
+			FilePath: mainFilePath,
+			FileSize: header.Size,
+			Order:    0,
+			IsLocked: isLocked,
+		})
+	} else {
+		// Multiple files — simpan ke disk
+		for i, fileHeader := range multiFiles {
+			file, err := fileHeader.Open()
+			if err != nil {
+				continue
 			}
 
-			// Split PDF per halaman
-			splitDir := filepath.Join("uploads", "split", id)
-			if err := utils.SplitPDF(filePath, splitDir); err != nil {
-				fmt.Println("Gagal memecah PDF:", err)
+			ext := filepath.Ext(fileHeader.Filename)
+			storedName := uuid.New().String() + ext
+			filePath := "uploads/" + storedName
+
+			dst, err := os.Create(filePath)
+			if err != nil {
+				file.Close()
+				continue
 			}
+
+			io.Copy(dst, file)
+			dst.Close()
+			file.Close()
+
+			if i == 0 {
+				mainFilePath = filePath
+			}
+
+			isLocked := i < len(fileLocks) && fileLocks[i] == "true"
+			savedFiles = append(savedFiles, savedFile{
+				FileName: fileHeader.Filename,
+				FilePath: filePath,
+				FileSize: fileHeader.Size,
+				Order:    i,
+				IsLocked: isLocked,
+			})
+		}
+	}
+
+	// STEP 1: Insert dokumen ke database DULU (parent record)
+	query := `
+		INSERT INTO documents (id, judul, penulis, jenis_file, file_path, status, fakultas_id, prodi_id, dosen_pembimbing)
+		VALUES ($1, $2, $3, $4, $5, $6,
+			CASE WHEN $7 = '' THEN NULL ELSE $7::uuid END,
+			CASE WHEN $8 = '' THEN NULL ELSE $8::uuid END,
+			$9)
+	`
+	_, err := config.DB.Exec(context.Background(), query,
+		docID, judul, penulis, jenisFile, mainFilePath, status, fakultasID, prodiID, dosenPembimbing)
+
+	if err != nil {
+		http.Error(w, "Gagal menyimpan metadata: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// STEP 2: Setelah dokumen ada, baru insert file-file ke document_files
+	for _, sf := range savedFiles {
+		fileID := uuid.New()
+		config.DB.Exec(context.Background(),
+			`INSERT INTO document_files (id, document_id, file_name, file_path, file_size, file_order, is_locked)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+			fileID, docID, sf.FileName, sf.FilePath, sf.FileSize, sf.Order, sf.IsLocked)
+	}
+
+	// Response
+	doc := models.Document{
+		ID:              docID.String(),
+		Judul:           judul,
+		Penulis:         penulis,
+		JenisFile:       jenisFile,
+		FakultasID:      fakultasID,
+		ProdiID:         prodiID,
+		DosenPembimbing: dosenPembimbing,
+		Status:          status,
+		Files:           getDocumentFiles(docID.String()),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(doc)
+}
+
+// updateDocument mengupdate dokumen
+func updateDocument(w http.ResponseWriter, r *http.Request, id string) {
+	r.ParseMultipartForm(100 << 20) // 100 MB max
+
+	judul := r.FormValue("title")
+	penulis := r.FormValue("author")
+	jenisFile := r.FormValue("category")
+	status := r.FormValue("status")
+	fakultasID := r.FormValue("fakultas_id")
+	prodiID := r.FormValue("prodi_id")
+	dosenPembimbing := r.FormValue("dosen_pembimbing")
+
+	if judul == "" || penulis == "" || jenisFile == "" {
+		http.Error(w, "Metadata tidak lengkap", http.StatusBadRequest)
+		return
+	}
+
+	if status == "" {
+		status = "draft"
+	}
+
+	// Update metadata dokumen
+	query := `
+		UPDATE documents
+		SET judul = $1, penulis = $2, jenis_file = $3, status = $4,
+		    fakultas_id = CASE WHEN $5 = '' THEN NULL ELSE $5::uuid END,
+		    prodi_id = CASE WHEN $6 = '' THEN NULL ELSE $6::uuid END,
+		    dosen_pembimbing = $7
+		WHERE id = $8
+	`
+	_, err := config.DB.Exec(context.Background(), query,
+		judul, penulis, jenisFile, status, fakultasID, prodiID, dosenPembimbing, id)
+
+	if err != nil {
+		http.Error(w, "Gagal update dokumen: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Handle new files jika ada
+	fileLocks := strings.Split(r.FormValue("file_locks"), ",")
+	multiFiles := r.MultipartForm.File["files"]
+	if len(multiFiles) > 0 {
+		// Hapus file lama
+		oldFiles := getDocumentFiles(id)
+		for _, of := range oldFiles {
+			os.Remove(of.FilePath)
+		}
+		config.DB.Exec(context.Background(),
+			`DELETE FROM document_files WHERE document_id = $1`, id)
+
+		// Upload file baru
+		var firstFilePath string
+		for i, fileHeader := range multiFiles {
+			file, err := fileHeader.Open()
+			if err != nil {
+				continue
+			}
+
+			ext := filepath.Ext(fileHeader.Filename)
+			storedName := uuid.New().String() + ext
+			filePath := "uploads/" + storedName
+
+			dst, err := os.Create(filePath)
+			if err != nil {
+				file.Close()
+				continue
+			}
+
+			io.Copy(dst, file)
+			dst.Close()
+			file.Close()
+
+			if i == 0 {
+				firstFilePath = filePath
+			}
+
+			isLocked := i < len(fileLocks) && fileLocks[i] == "true"
+			fileID := uuid.New()
+			config.DB.Exec(context.Background(),
+				`INSERT INTO document_files (id, document_id, file_name, file_path, file_size, file_order, is_locked)
+				 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+				fileID, id, fileHeader.Filename, filePath, fileHeader.Size, i, isLocked)
 		}
 
-		// Update dengan file baru
-		query := `
-			UPDATE documents
-			SET judul = $1, penulis = $2, jenis_file = $3, status = $4, file_path = $5
-			WHERE id = $6
-		`
-		_, err = config.DB.Exec(context.Background(), query,
-			judul, penulis, jenisFile, status, filePath, id)
-
-		if err != nil {
-			http.Error(w, "Gagal update dokumen", http.StatusInternalServerError)
-			return
+		if firstFilePath != "" {
+			config.DB.Exec(context.Background(),
+				`UPDATE documents SET file_path = $1 WHERE id = $2`, firstFilePath, id)
 		}
 	} else {
-		// Tidak ada file baru, update metadata saja
-		query := `
-			UPDATE documents
-			SET judul = $1, penulis = $2, jenis_file = $3, status = $4
-			WHERE id = $5
-		`
-		_, err = config.DB.Exec(context.Background(), query,
-			judul, penulis, jenisFile, status, id)
+		// Cek single file fallback
+		file, header, err := r.FormFile("file")
+		if err == nil {
+			defer file.Close()
 
-		if err != nil {
-			http.Error(w, "Gagal update dokumen", http.StatusInternalServerError)
-			return
+			oldFiles := getDocumentFiles(id)
+			for _, of := range oldFiles {
+				os.Remove(of.FilePath)
+			}
+			config.DB.Exec(context.Background(),
+				`DELETE FROM document_files WHERE document_id = $1`, id)
+
+			ext := filepath.Ext(header.Filename)
+			storedName := uuid.New().String() + ext
+			filePath := "uploads/" + storedName
+
+			dst, err := os.Create(filePath)
+			if err == nil {
+				io.Copy(dst, file)
+				dst.Close()
+
+				config.DB.Exec(context.Background(),
+					`UPDATE documents SET file_path = $1 WHERE id = $2`, filePath, id)
+
+				isLocked := len(fileLocks) > 0 && fileLocks[0] == "true"
+				fileID := uuid.New()
+				config.DB.Exec(context.Background(),
+					`INSERT INTO document_files (id, document_id, file_name, file_path, file_size, file_order, is_locked)
+					 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+					fileID, id, header.Filename, filePath, header.Size, 0, isLocked)
+			}
 		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"id":         id,
-		"judul":      judul,
-		"penulis":    penulis,
-		"jenis_file": jenisFile,
-		"status":     status,
+		"id":               id,
+		"judul":            judul,
+		"penulis":          penulis,
+		"jenis_file":       jenisFile,
+		"status":           status,
+		"fakultas_id":      fakultasID,
+		"prodi_id":         prodiID,
+		"dosen_pembimbing": dosenPembimbing,
 	})
 }
 
-// deleteDocument menghapus dokumen dan filenya
+// deleteDocument menghapus dokumen dan file-filenya
 func deleteDocument(w http.ResponseWriter, r *http.Request, id string) {
-	// Ambil file path dari DB
-	var filePath string
-	err := config.DB.QueryRow(
-		context.Background(),
-		`SELECT file_path FROM documents WHERE id = $1`,
-		id,
-	).Scan(&filePath)
+	// Hapus semua file fisik
+	files := getDocumentFiles(id)
+	for _, f := range files {
+		os.Remove(f.FilePath)
+	}
 
+	// Hapus juga file_path lama
+	var filePath string
+	config.DB.QueryRow(context.Background(),
+		`SELECT COALESCE(file_path, '') FROM documents WHERE id = $1`, id).Scan(&filePath)
+	if filePath != "" {
+		os.Remove(filePath)
+	}
+
+	// document_files otomatis terhapus karena ON DELETE CASCADE
+	result, err := config.DB.Exec(context.Background(),
+		`DELETE FROM documents WHERE id = $1`, id)
 	if err != nil {
-		http.Error(w, "Dokumen tidak ditemukan", http.StatusNotFound)
+		http.Error(w, "Gagal menghapus data", http.StatusInternalServerError)
 		return
 	}
 
-	// Hapus file fisik
-	if filePath != "" {
-		err = os.Remove(filePath)
-		if err != nil {
-			fmt.Printf("Warning: Failed to delete file %s: %v\n", filePath, err)
-		}
-	}
-
-	// Hapus direktori split pages jika ada
-	splitDir := filepath.Join("uploads", "split", id)
-	os.RemoveAll(splitDir)
-
-	// Hapus dari database
-	_, err = config.DB.Exec(
-		context.Background(),
-		`DELETE FROM documents WHERE id = $1`,
-		id,
-	)
-	if err != nil {
-		http.Error(w, "Gagal menghapus data", http.StatusInternalServerError)
+	if result.RowsAffected() == 0 {
+		http.Error(w, "Dokumen tidak ditemukan", http.StatusNotFound)
 		return
 	}
 
@@ -365,7 +523,6 @@ func DownloadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ambil ID dari URL
 	path := strings.TrimPrefix(r.URL.Path, "/download/")
 	id := strings.TrimSuffix(path, "/download")
 
@@ -374,110 +531,106 @@ func DownloadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ambil file_path dari DB
-	var filePath string
-	err := config.DB.QueryRow(
-		context.Background(),
-		`SELECT file_path FROM documents WHERE id = $1`,
-		id,
-	).Scan(&filePath)
+	var fp string
+	err := config.DB.QueryRow(context.Background(),
+		`SELECT file_path FROM documents WHERE id = $1`, id).Scan(&fp)
 
 	if err != nil {
 		http.Error(w, "File tidak ditemukan", http.StatusNotFound)
 		return
 	}
 
-	// Kirim file
 	w.Header().Set("Content-Disposition", "attachment")
-	http.ServeFile(w, r, filePath)
+	http.ServeFile(w, r, fp)
 }
 
-// PreviewSplitHandler menangani preview halaman PDF
-// GET /preview/split/:id/:page.pdf
-func PreviewSplitHandler(w http.ResponseWriter, r *http.Request) {
-	middleware.EnableCORS(w)
-
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	// Expected path: /preview/split/{id}/{page.pdf}
-	relPath := strings.TrimPrefix(r.URL.Path, "/preview/split/")
-	if relPath == "" {
-		http.Error(w, "Path not specified", http.StatusBadRequest)
-		return
-	}
-
-	// Cegah directory traversal
-	cleanRel := filepath.Clean(relPath)
-	if strings.HasPrefix(cleanRel, "..") {
-		http.Error(w, "Invalid path", http.StatusBadRequest)
-		return
-	}
-
-	filePath := filepath.Join("uploads", "split", cleanRel)
-
-	// Cek file exists
-	fileInfo, err := os.Stat(filePath)
-	if err != nil {
-		fmt.Printf("File not found: %s, error: %v\n", filePath, err)
-		http.Error(w, "File not found", http.StatusNotFound)
-		return
-	}
-
-	// Cek apakah file kosong
-	if fileInfo.Size() == 0 {
-		fmt.Printf("Warning: File is empty: %s\n", filePath)
-		http.Error(w, "File is empty", http.StatusInternalServerError)
-		return
-	}
-
-	fmt.Printf("Serving file: %s (size: %d bytes)\n", filePath, fileInfo.Size())
-
-	// Set headers
-	w.Header().Set("Content-Type", "application/pdf")
-	w.Header().Set("Content-Disposition", "inline")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Cache-Control", "public, max-age=3600")
-
-	http.ServeFile(w, r, filePath)
-}
-
-// DocumentPagesHandler mengembalikan list halaman PDF
-// GET /api/documents/pages/:id
-func DocumentPagesHandler(w http.ResponseWriter, r *http.Request) {
+// DownloadAllHandler menangani download semua file dokumen dalam bentuk ZIP
+// GET /api/documents/:id/download-all
+func DownloadAllHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodOptions {
 		middleware.EnableCORS(w)
 		return
 	}
 	middleware.EnableCORS(w)
 
-	// Parse ID: /api/documents/pages/{id}
-	id := strings.TrimPrefix(r.URL.Path, "/api/documents/pages/")
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract document ID dari URL: /api/documents/{id}/download-all
+	path := strings.TrimPrefix(r.URL.Path, "/api/documents/")
+	id := strings.TrimSuffix(path, "/download-all")
+
 	if id == "" {
 		http.Error(w, "ID tidak valid", http.StatusBadRequest)
 		return
 	}
 
-	splitDir := filepath.Join("uploads", "split", id)
-	files, err := os.ReadDir(splitDir)
+	// Ambil judul dokumen untuk nama file ZIP
+	var judul string
+	err := config.DB.QueryRow(context.Background(),
+		`SELECT judul FROM documents WHERE id = $1`, id).Scan(&judul)
 	if err != nil {
-		// Dir tidak ditemukan = belum di-split atau bukan PDF
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte("[]"))
+		http.Error(w, "Dokumen tidak ditemukan", http.StatusNotFound)
 		return
 	}
 
-	var pages []string
-	for _, f := range files {
-		if !f.IsDir() && strings.HasSuffix(f.Name(), ".pdf") {
-			pages = append(pages, f.Name())
+	// Ambil semua file terkait dokumen
+	files := getDocumentFiles(id)
+
+	// Jika tidak ada file di document_files, fallback ke file_path utama
+	if len(files) == 0 {
+		var fp string
+		config.DB.QueryRow(context.Background(),
+			`SELECT COALESCE(file_path, '') FROM documents WHERE id = $1`, id).Scan(&fp)
+		if fp != "" {
+			w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.pdf"`, judul))
+			http.ServeFile(w, r, fp)
+			return
 		}
+		http.Error(w, "Tidak ada file untuk dokumen ini", http.StatusNotFound)
+		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(pages)
+	// Jika hanya 1 file, langsung download file tersebut tanpa ZIP
+	if len(files) == 1 {
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, files[0].FileName))
+		http.ServeFile(w, r, files[0].FilePath)
+		return
+	}
+
+	// Multiple files: buat ZIP
+	// Bersihkan nama file untuk ZIP
+	safeJudul := strings.ReplaceAll(judul, " ", "_")
+	safeJudul = strings.ReplaceAll(safeJudul, "/", "_")
+	zipFileName := safeJudul + ".zip"
+
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, zipFileName))
+
+	// Stream ZIP langsung ke response writer
+	zipWriter := zip.NewWriter(w)
+	defer zipWriter.Close()
+
+	for _, file := range files {
+		// Buka file dari disk
+		f, err := os.Open(file.FilePath)
+		if err != nil {
+			continue // Skip file yang tidak bisa dibuka
+		}
+
+		// Buat entry di ZIP dengan nama file asli
+		zEntry, err := zipWriter.Create(file.FileName)
+		if err != nil {
+			f.Close()
+			continue
+		}
+
+		// Copy isi file ke ZIP
+		io.Copy(zEntry, f)
+		f.Close()
+	}
 }
 
 // UploadHandler menangani upload file legacy
@@ -531,15 +684,14 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 	`
 
 	_, err = config.DB.Exec(context.Background(), query,
-		id, judul, penulis, jenisFile, filePath,
-	)
+		id, judul, penulis, jenisFile, filePath)
 
 	if err != nil {
 		http.Error(w, "Gagal menyimpan metadata", http.StatusInternalServerError)
 		return
 	}
 
-	r.ParseMultipartForm(10 << 20) // 10 MB
+	r.ParseMultipartForm(50 << 20)
 
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprintf(w, `{

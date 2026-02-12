@@ -16,6 +16,8 @@
   import DocumentAdd from "./pages/Documents/DocumentAdd.svelte";
   import DocumentEdit from "./pages/Documents/DocumentEdit.svelte";
   import UserList from "./pages/Users/UserList.svelte";
+  import FakultasList from "./pages/Fakultas/FakultasList.svelte";
+  import ProdiList from "./pages/Prodi/ProdiList.svelte";
 
   // Auth Pages
   import LoginPage from "./pages/Auth/LoginPage.svelte";
@@ -82,11 +84,15 @@
     "/admin/documents/add": protectedRoute(DocumentAdd),
     "/admin/documents/edit/:id": protectedRoute(DocumentEdit),
     "/admin/users": protectedRoute(UserList),
+    "/admin/fakultas": protectedRoute(FakultasList),
+    "/admin/prodi": protectedRoute(ProdiList),
     "/dashboard": protectedRoute(Dashboard),
     "/documents": protectedRoute(DocumentList),
     "/documents/add": protectedRoute(DocumentAdd),
     "/documents/edit/:id": protectedRoute(DocumentEdit),
     "/users": protectedRoute(UserList),
+    "/fakultas": protectedRoute(FakultasList),
+    "/prodi": protectedRoute(ProdiList),
     "/reports": protectedRoute(Reports),
     "/settings": protectedRoute(Settings),
 

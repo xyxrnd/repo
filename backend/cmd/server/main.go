@@ -57,15 +57,20 @@ func main() {
 	http.HandleFunc("/uploads", handlers.UploadHandler)
 	http.HandleFunc("/api/documents", handlers.DocumentsHandler)
 	http.HandleFunc("/api/documents/", handlers.DocumentByIdHandler)
-	http.HandleFunc("/api/documents/pages/", handlers.DocumentPagesHandler)
 
 	// --- File Routes ---
-	// Download dan preview file
+	// Download file
 	http.HandleFunc("/download/", handlers.DownloadHandler)
-	http.HandleFunc("/preview/split/", handlers.PreviewSplitHandler)
+	// Serve uploaded files statically (for individual file downloads)
+	http.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("uploads"))))
 
-	// Static file server untuk split PDF
-	http.Handle("/split/", http.StripPrefix("/split/", http.FileServer(http.Dir("uploads/split"))))
+	// --- Fakultas Routes (Admin Only) ---
+	http.HandleFunc("/api/fakultas", middleware.AdminMiddleware(handlers.FakultasHandler))
+	http.HandleFunc("/api/fakultas/", middleware.AdminMiddleware(handlers.FakultasByIdHandler))
+
+	// --- Prodi Routes (Admin Only) ---
+	http.HandleFunc("/api/prodi", middleware.AdminMiddleware(handlers.ProdiHandler))
+	http.HandleFunc("/api/prodi/", middleware.AdminMiddleware(handlers.ProdiByIdHandler))
 
 	// ============================================
 	// START SERVER
@@ -82,6 +87,8 @@ func main() {
 	fmt.Println("  GET  /api/users          - List users (admin)")
 	fmt.Println("  GET  /api/documents      - List documents")
 	fmt.Println("  POST /api/documents      - Create document")
+	fmt.Println("  GET  /api/fakultas       - List fakultas (admin)")
+	fmt.Println("  GET  /api/prodi          - List prodi (admin)")
 	fmt.Println("")
 
 	http.ListenAndServe(":8080", nil)
