@@ -302,7 +302,7 @@
                                 </span>
                             </div>
 
-                            <a href="#/documents/{doc.id}">
+                            <a href="#/document/{doc.id}">
                                 <h3
                                     class="text-lg font-bold text-slate-900 dark:text-white mb-2 line-clamp-2 group-hover:text-primary transition-colors"
                                 >
@@ -337,7 +337,7 @@
                             class="px-6 py-4 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-700 flex items-center justify-between"
                         >
                             <a
-                                href="#/documents/{doc.id}"
+                                href="#/document/{doc.id}"
                                 class="text-primary font-medium text-sm hover:underline"
                             >
                                 Lihat Detail
@@ -375,7 +375,7 @@
                             <div
                                 class="flex items-start justify-between gap-4 mb-2"
                             >
-                                <a href="#/documents/{doc.id}">
+                                <a href="#/document/{doc.id}">
                                     <h3
                                         class="text-lg font-bold text-slate-900 dark:text-white group-hover:text-primary transition-colors"
                                     >
@@ -407,7 +407,7 @@
 
                         <div class="flex items-center gap-2 flex-shrink-0">
                             <a
-                                href="#/documents/{doc.id}"
+                                href="#/document/{doc.id}"
                                 class="px-4 py-2 bg-primary/10 text-primary font-medium rounded-lg hover:bg-primary/20 transition-colors"
                             >
                                 Detail

@@ -12,6 +12,7 @@
 
     let title = "";
     let author = "";
+    let abstrak = "";
     let fileType = "";
     let status = "draft";
     let fakultasId = "";
@@ -50,6 +51,7 @@
             const doc = await getDocumentById(params.id);
             title = doc.judul;
             author = doc.penulis;
+            abstrak = doc.abstrak || "";
             fileType = doc.jenis_file;
             status = doc.status;
             fakultasId = doc.fakultas_id || "";
@@ -121,6 +123,7 @@
         const formData = new FormData();
         formData.append("title", title);
         formData.append("author", author);
+        formData.append("abstrak", abstrak);
         formData.append("category", fileType);
         formData.append("status", status);
         formData.append("dosen_pembimbing", dosenPembimbing);
@@ -228,6 +231,27 @@
                             placeholder="Contoh: Analisis Pengaruh Digitalisasi..."
                             type="text"
                         />
+                    </div>
+
+                    <!-- Abstrak -->
+                    <div>
+                        <label
+                            for="edit-abstrak"
+                            class="block text-sm font-bold mb-2 text-slate-700 dark:text-slate-300"
+                        >
+                            Abstrak / Ringkasan
+                        </label>
+                        <textarea
+                            id="edit-abstrak"
+                            bind:value={abstrak}
+                            class="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border-none rounded-lg focus:ring-2 focus:ring-primary/50 text-sm transition-all min-h-[160px] resize-y"
+                            placeholder="Masukkan abstrak atau ringkasan dokumen..."
+                            rows="6"
+                        ></textarea>
+                        <p class="mt-1 text-xs text-slate-400">
+                            Abstrak akan ditampilkan pada halaman detail
+                            dokumen.
+                        </p>
                     </div>
 
                     <!-- Penulis + Jenis -->

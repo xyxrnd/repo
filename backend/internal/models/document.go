@@ -7,6 +7,7 @@ type Document struct {
 	ID              string         `json:"id"`
 	Judul           string         `json:"judul"`
 	Penulis         string         `json:"penulis"`
+	Abstrak         string         `json:"abstrak,omitempty"`
 	JenisFile       string         `json:"jenis_file"`
 	FakultasID      string         `json:"fakultas_id,omitempty"`
 	FakultasNama    string         `json:"fakultas_nama,omitempty"`
@@ -15,6 +16,7 @@ type Document struct {
 	DosenPembimbing string         `json:"dosen_pembimbing,omitempty"`
 	FilePath        string         `json:"file_path,omitempty"`
 	Status          string         `json:"status"`
+	ViewCount       int            `json:"view_count"`
 	CreatedAt       time.Time      `json:"created_at"`
 	Files           []DocumentFile `json:"files,omitempty"`
 }
@@ -34,6 +36,7 @@ type DocumentFile struct {
 type CreateDocumentRequest struct {
 	Title           string `json:"title"`
 	Author          string `json:"author"`
+	Abstrak         string `json:"abstrak"`
 	Category        string `json:"category"`
 	Status          string `json:"status"`
 	FakultasID      string `json:"fakultas_id"`
@@ -45,6 +48,7 @@ type CreateDocumentRequest struct {
 type UpdateDocumentRequest struct {
 	Title           string `json:"title"`
 	Author          string `json:"author"`
+	Abstrak         string `json:"abstrak"`
 	Category        string `json:"category"`
 	Status          string `json:"status"`
 	FakultasID      string `json:"fakultas_id"`

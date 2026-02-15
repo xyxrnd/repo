@@ -1,6 +1,12 @@
 <script>
     import { onMount } from "svelte";
     import { getDocuments } from "../../services/documentService";
+    import {
+        appName,
+        appDescription,
+        aboutText,
+        initSiteSettings,
+    } from "../../stores/index.js";
 
     let searchQuery = "";
     let searchFilter = "Semua";
@@ -15,6 +21,7 @@
     let categoryList = [];
 
     onMount(() => {
+        initSiteSettings();
         loadStats();
     });
 
@@ -80,7 +87,7 @@
             >
                 <span class="w-2 h-2 rounded-full bg-primary animate-pulse"
                 ></span>
-                Repositori Universitas Negeri
+                {$appDescription}
             </div>
 
             <!-- Title -->
@@ -90,15 +97,20 @@
                 Temukan <span
                     class="text-transparent bg-clip-text bg-gradient-to-r from-primary to-blue-400"
                     >Karya Ilmiah</span
-                > Terbaik
+                >
+                di {$appName}
             </h1>
 
             <!-- Subtitle -->
             <h2
                 class="text-slate-600 dark:text-slate-400 text-lg md:text-xl font-normal leading-relaxed max-w-2xl mx-auto"
             >
-                Akses ribuan skripsi, tesis, jurnal, dan karya ilmiah dari
-                civitas akademika Universitas Negeri.
+                {#if $aboutText}
+                    {$aboutText}
+                {:else}
+                    Akses ribuan skripsi, tesis, jurnal, dan karya ilmiah dari
+                    civitas akademika {$appName}.
+                {/if}
             </h2>
         </div>
 

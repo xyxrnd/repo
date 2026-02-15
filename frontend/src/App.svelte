@@ -18,6 +18,7 @@
   import UserList from "./pages/Users/UserList.svelte";
   import FakultasList from "./pages/Fakultas/FakultasList.svelte";
   import ProdiList from "./pages/Prodi/ProdiList.svelte";
+  import SystemSettings from "./pages/Admin/SystemSettings.svelte";
 
   // Auth Pages
   import LoginPage from "./pages/Auth/LoginPage.svelte";
@@ -27,6 +28,7 @@
   import LandingPage from "./pages/Landing/LandingPage.svelte";
   import BrowsePage from "./pages/Browse/BrowsePage.svelte";
   import AboutPage from "./pages/About/AboutPage.svelte";
+  import DocumentDetail from "./pages/Documents/DocumentDetail.svelte";
   import NotFound from "./pages/NotFound.svelte";
 
   // Track current route for layout switching
@@ -36,7 +38,7 @@
   const authRoutes = ["/login", "/register"];
 
   // Public routes that use PublicLayout
-  const publicRoutes = ["/", "/landing", "/browse", "/about"];
+  const publicRoutes = ["/", "/landing", "/browse", "/about", "/document"];
 
   function isAuthRoute(route) {
     return authRoutes.some((r) => route === r || route.startsWith(r + "/"));
@@ -72,6 +74,7 @@
     "/landing": LandingPage,
     "/browse": BrowsePage,
     "/about": AboutPage,
+    "/document/:id": DocumentDetail,
 
     // Auth routes
     "/login": LoginPage,
@@ -95,6 +98,8 @@
     "/prodi": protectedRoute(ProdiList),
     "/reports": protectedRoute(Reports),
     "/settings": protectedRoute(Settings),
+    "/system-settings": protectedRoute(SystemSettings),
+    "/admin/system-settings": protectedRoute(SystemSettings),
 
     // Catch-all
     "*": NotFound,
@@ -109,7 +114,7 @@
   <!-- Auth pages have their own full-page layout -->
   <Router {routes} on:routeLoaded={routeLoaded} />
 {:else if isPublicRoute(currentRoute)}
-  <PublicLayout appName="ScholarHub">
+  <PublicLayout>
     <Router {routes} on:routeLoaded={routeLoaded} />
   </PublicLayout>
 {:else}

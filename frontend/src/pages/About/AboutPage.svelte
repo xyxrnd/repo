@@ -1,4 +1,20 @@
 <script>
+    import { onMount } from "svelte";
+    import {
+        appName,
+        appDescription,
+        aboutText,
+        visi,
+        misi,
+        footerText,
+        contactInfo,
+        initSiteSettings,
+    } from "../../stores/index.js";
+
+    onMount(() => {
+        initSiteSettings();
+    });
+
     const features = [
         {
             icon: "library_books",
@@ -62,6 +78,28 @@
         { value: "100%", label: "Gratis" },
         { value: "∞", label: "Tanpa Batas" },
     ];
+
+    // Parse misi string into array of items (split by newline)
+    $: misiItems = $misi
+        ? $misi
+              .split("\n")
+              .map((item) => item.trim())
+              .filter((item) => item.length > 0)
+        : [];
+
+    // Default visi text
+    const defaultVisi =
+        "Menjadi pusat informasi dan dokumentasi karya ilmiah terdepan yang mendukung pengembangan ilmu pengetahuan dan teknologi di Indonesia.";
+
+    // Default misi items
+    const defaultMisiItems = [
+        "Menyediakan akses mudah terhadap karya ilmiah",
+        "Mendokumentasikan hasil penelitian civitas akademika",
+        "Mendukung pengembangan riset dan inovasi",
+    ];
+
+    $: displayVisi = $visi || defaultVisi;
+    $: displayMisiItems = misiItems.length > 0 ? misiItems : defaultMisiItems;
 </script>
 
 <div class="min-h-screen bg-slate-50 dark:bg-background-dark">
@@ -89,15 +127,16 @@
                 <h1
                     class="text-4xl md:text-5xl lg:text-6xl font-black mb-6 leading-tight"
                 >
-                    Repositori <span class="text-blue-200"
-                        >Universitas Negeri</span
-                    >
+                    Repositori <span class="text-blue-200">{$appName}</span>
                 </h1>
 
                 <p class="text-xl text-blue-100 leading-relaxed">
-                    Platform digital untuk menyimpan, mengelola, dan
-                    menyebarluaskan karya ilmiah civitas akademika Universitas
-                    Negeri.
+                    {#if $aboutText}
+                        {$aboutText}
+                    {:else}
+                        Platform digital untuk menyimpan, mengelola, dan
+                        menyebarluaskan karya ilmiah civitas akademika {$appName}.
+                    {/if}
                 </p>
             </div>
         </div>
@@ -156,9 +195,7 @@
                                 </h3>
                             </div>
                             <p class="text-slate-600 dark:text-slate-400">
-                                Menjadi pusat informasi dan dokumentasi karya
-                                ilmiah terdepan yang mendukung pengembangan ilmu
-                                pengetahuan dan teknologi di Indonesia.
+                                {displayVisi}
                             </p>
                         </div>
 
@@ -181,27 +218,15 @@
                             <ul
                                 class="text-slate-600 dark:text-slate-400 space-y-2"
                             >
-                                <li class="flex items-start gap-2">
-                                    <span
-                                        class="material-symbols-outlined text-primary text-sm mt-1"
-                                        >check_circle</span
-                                    >
-                                    Menyediakan akses mudah terhadap karya ilmiah
-                                </li>
-                                <li class="flex items-start gap-2">
-                                    <span
-                                        class="material-symbols-outlined text-primary text-sm mt-1"
-                                        >check_circle</span
-                                    >
-                                    Mendokumentasikan hasil penelitian civitas akademika
-                                </li>
-                                <li class="flex items-start gap-2">
-                                    <span
-                                        class="material-symbols-outlined text-primary text-sm mt-1"
-                                        >check_circle</span
-                                    >
-                                    Mendukung pengembangan riset dan inovasi
-                                </li>
+                                {#each displayMisiItems as item}
+                                    <li class="flex items-start gap-2">
+                                        <span
+                                            class="material-symbols-outlined text-primary text-sm mt-1"
+                                            >check_circle</span
+                                        >
+                                        {item}
+                                    </li>
+                                {/each}
                             </ul>
                         </div>
                     </div>
@@ -338,48 +363,80 @@
 
     <!-- Contact Section -->
     <section
-        class="py-16 px-4 bg-gradient-to-br from-primary via-blue-600 to-indigo-700 text-white"
+        class="py-20 px-4 bg-gradient-to-br from-primary via-blue-600 to-indigo-700 text-white relative overflow-hidden"
     >
-        <div class="container mx-auto max-w-6xl">
-            <div class="text-center max-w-2xl mx-auto">
-                <h2 class="text-3xl font-bold mb-4">Hubungi Kami</h2>
-                <p class="text-blue-100 mb-8">
+        <!-- Decorative -->
+        <div
+            class="absolute top-0 right-0 w-80 h-80 bg-white/5 rounded-full blur-3xl translate-x-1/3 -translate-y-1/3"
+        ></div>
+        <div
+            class="absolute bottom-0 left-0 w-64 h-64 bg-blue-400/10 rounded-full blur-3xl -translate-x-1/3 translate-y-1/3"
+        ></div>
+
+        <div class="container mx-auto max-w-6xl relative z-10">
+            <div class="text-center mb-12">
+                <h2 class="text-3xl md:text-4xl font-black mb-4">
+                    Hubungi Kami
+                </h2>
+                <p class="text-blue-100 text-lg max-w-xl mx-auto">
                     Punya pertanyaan atau saran? Jangan ragu untuk menghubungi
                     kami.
                 </p>
+            </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div
+                class="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto"
+            >
+                <!-- Alamat -->
+                <div
+                    class="flex flex-col items-center text-center p-8 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/15 transition-all"
+                >
                     <div
-                        class="p-6 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20"
+                        class="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center mb-5"
                     >
-                        <span class="material-symbols-outlined text-3xl mb-3"
+                        <span class="material-symbols-outlined text-2xl"
                             >location_on</span
                         >
-                        <h3 class="font-bold mb-1">Alamat</h3>
-                        <p class="text-blue-100 text-sm">
-                            Jl. Universitas No. 1, Indonesia
-                        </p>
                     </div>
+                    <h3 class="font-bold text-lg mb-2">Alamat</h3>
+                    <p class="text-blue-100 text-sm leading-relaxed">
+                        {$contactInfo.address ||
+                            "Jl. Universitas No. 1, Indonesia"}
+                    </p>
+                </div>
+
+                <!-- Email -->
+                <div
+                    class="flex flex-col items-center text-center p-8 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/15 transition-all"
+                >
                     <div
-                        class="p-6 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20"
+                        class="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center mb-5"
                     >
-                        <span class="material-symbols-outlined text-3xl mb-3"
+                        <span class="material-symbols-outlined text-2xl"
                             >email</span
                         >
-                        <h3 class="font-bold mb-1">Email</h3>
-                        <p class="text-blue-100 text-sm">
-                            repository@univ.ac.id
-                        </p>
                     </div>
+                    <h3 class="font-bold text-lg mb-2">Email</h3>
+                    <p class="text-blue-100 text-sm leading-relaxed break-all">
+                        {$contactInfo.email || "repository@univ.ac.id"}
+                    </p>
+                </div>
+
+                <!-- Telepon -->
+                <div
+                    class="flex flex-col items-center text-center p-8 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/15 transition-all"
+                >
                     <div
-                        class="p-6 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20"
+                        class="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center mb-5"
                     >
-                        <span class="material-symbols-outlined text-3xl mb-3"
+                        <span class="material-symbols-outlined text-2xl"
                             >call</span
                         >
-                        <h3 class="font-bold mb-1">Telepon</h3>
-                        <p class="text-blue-100 text-sm">(021) 1234567</p>
                     </div>
+                    <h3 class="font-bold text-lg mb-2">Telepon</h3>
+                    <p class="text-blue-100 text-sm leading-relaxed">
+                        {$contactInfo.phone || "(021) 1234567"}
+                    </p>
                 </div>
             </div>
         </div>
@@ -388,7 +445,13 @@
     <!-- Footer -->
     <footer class="py-8 px-4 bg-slate-900 text-slate-400">
         <div class="container mx-auto max-w-6xl text-center">
-            <p>© 2024 Repositori Universitas Negeri. All rights reserved.</p>
+            <p>
+                {#if $footerText}
+                    {$footerText}
+                {:else}
+                    © 2025 {$appName} Digital Repository. All rights reserved.
+                {/if}
+            </p>
         </div>
     </footer>
 </div>

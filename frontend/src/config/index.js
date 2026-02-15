@@ -26,6 +26,7 @@ export const API_ENDPOINTS = {
     DOCUMENT_BY_ID: (id) => `${API_BASE_URL}/api/documents/${id}`,
     DOCUMENT_DOWNLOAD: (id) => `${API_BASE_URL}/download/${id}`,
     DOCUMENT_DOWNLOAD_ALL: (id) => `${API_BASE_URL}/api/documents/${id}/download-all`,
+    DOCUMENTS_POPULAR: `${API_BASE_URL}/api/documents/popular`,
 
     // Fakultas
     FAKULTAS: `${API_BASE_URL}/api/fakultas`,
@@ -34,6 +35,10 @@ export const API_ENDPOINTS = {
     // Prodi
     PRODI: `${API_BASE_URL}/api/prodi`,
     PRODI_BY_ID: (id) => `${API_BASE_URL}/api/prodi/${id}`,
+
+    // Site Settings
+    SITE_SETTINGS: `${API_BASE_URL}/api/site-settings`,
+    SITE_LOGO_UPLOAD: `${API_BASE_URL}/api/site-settings/logo`,
 };
 
 // App Configuration
@@ -79,4 +84,5 @@ export const ROUTES = {
     PRODI: "/admin/prodi",
     REPORTS: "/reports",
     SETTINGS: "/settings",
+    SYSTEM_SETTINGS: "/system-settings",
 };

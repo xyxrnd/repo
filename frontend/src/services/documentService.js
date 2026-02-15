@@ -97,6 +97,20 @@ class DocumentService {
   }
 
   /**
+   * Ambil dokumen populer (paling sering dilihat)
+   * @param {number} limit - Jumlah dokumen yang diambil (default: 6)
+   * @returns {Promise<Array>} - Array of popular documents
+   * @throws {Error} - Jika gagal mengambil data
+   */
+  async getPopular(limit = 6) {
+    const response = await fetch(`${API_ENDPOINTS.DOCUMENTS_POPULAR}?limit=${limit}`);
+    if (!response.ok) {
+      throw new Error("Gagal mengambil data dokumen populer");
+    }
+    return response.json();
+  }
+
+  /**
    * Download dokumen
    * Membuka tab baru untuk download file
    * @param {string} id - Document ID
@@ -113,6 +127,7 @@ export const createDocument = (formData) => documentService.create(formData);
 export const updateDocument = (id, formData) => documentService.update(id, formData);
 export const deleteDocument = (id) => documentService.delete(id);
 export const downloadDocument = (id) => documentService.download(id);
+export const getPopularDocuments = (limit) => documentService.getPopular(limit);
 
 export const documentService = new DocumentService();
 export default documentService;

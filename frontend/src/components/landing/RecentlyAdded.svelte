@@ -173,7 +173,7 @@
                             </span>
                         </div>
 
-                        <a href="#/documents/{doc.id}" class="block">
+                        <a href="#/document/{doc.id}" class="block">
                             <h3
                                 class="text-lg font-bold text-slate-900 dark:text-white mb-2 line-clamp-2 group-hover:text-primary transition-colors"
                             >
@@ -184,9 +184,16 @@
                         <p
                             class="text-sm text-slate-500 dark:text-slate-400 mb-4 line-clamp-2"
                         >
-                            {doc.status === "publish"
-                                ? "Dipublikasikan"
-                                : "Draft"} • ID: {doc.id.substring(0, 8)}
+                            {#if doc.abstrak}
+                                {doc.abstrak}
+                            {:else}
+                                {doc.status === "publish"
+                                    ? "Dipublikasikan"
+                                    : "Draft"} • {doc.jenis_file
+                                    ? doc.jenis_file.charAt(0).toUpperCase() +
+                                      doc.jenis_file.slice(1)
+                                    : ""}
+                            {/if}
                         </p>
 
                         <div

@@ -74,6 +74,24 @@ func runMigrations(pool *pgxpool.Pool) {
 		`CREATE INDEX IF NOT EXISTS idx_document_files_doc_id ON document_files(document_id)`,
 		// Tambah kolom is_locked untuk fitur lock file
 		`ALTER TABLE document_files ADD COLUMN IF NOT EXISTS is_locked BOOLEAN DEFAULT FALSE`,
+		// Tabel untuk tracking views dokumen (untuk fitur dokumen populer)
+		`CREATE TABLE IF NOT EXISTS document_views (
+			id UUID PRIMARY KEY,
+			document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+			ip_address VARCHAR(100) DEFAULT '',
+			viewed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_document_views_doc_id ON document_views(document_id)`,
+		// Tambah kolom view_count di documents untuk cache jumlah views
+		`ALTER TABLE documents ADD COLUMN IF NOT EXISTS view_count INT DEFAULT 0`,
+		// Tambah kolom abstrak di documents untuk menyimpan abstrak/ringkasan dokumen
+		`ALTER TABLE documents ADD COLUMN IF NOT EXISTS abstrak TEXT DEFAULT ''`,
+		// Tabel site_settings untuk menyimpan pengaturan situs (key-value)
+		`CREATE TABLE IF NOT EXISTS site_settings (
+			key VARCHAR(100) PRIMARY KEY,
+			value TEXT DEFAULT '',
+			updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+		)`,
 	}
 
 	for _, q := range queries {

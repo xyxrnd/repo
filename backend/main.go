@@ -35,6 +35,7 @@ func main() {
 	// --- Document Routes ---
 	http.HandleFunc("/uploads", handlers.UploadHandler)
 	http.HandleFunc("/api/documents", handlers.DocumentsHandler)
+	http.HandleFunc("/api/documents/popular", handlers.PopularDocumentsHandler)
 	http.HandleFunc("/api/documents/", handlers.DocumentByIdHandler)
 
 	// --- File Routes ---
@@ -49,6 +50,10 @@ func main() {
 	// --- Prodi Routes (Admin Only) ---
 	http.HandleFunc("/api/prodi", middleware.AdminMiddleware(handlers.ProdiHandler))
 	http.HandleFunc("/api/prodi/", middleware.AdminMiddleware(handlers.ProdiByIdHandler))
+
+	// --- Site Settings Routes ---
+	http.HandleFunc("/api/site-settings", handlers.SiteSettingsHandler)
+	http.HandleFunc("/api/site-settings/logo", middleware.AdminMiddleware(handlers.SiteLogoHandler))
 
 	fmt.Println("========================================")
 	fmt.Println("  Repository UN - Backend Server")

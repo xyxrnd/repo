@@ -1,13 +1,21 @@
 <script>
     import { onMount } from "svelte";
     import authService from "../services/authService";
-
-    export let appName = "ScholarHub";
+    import {
+        appName,
+        appDescription,
+        aboutText,
+        footerText,
+        logoFullUrl,
+        contactInfo,
+        initSiteSettings,
+    } from "../stores/index.js";
 
     let user = null;
 
     onMount(() => {
         user = authService.getUser();
+        initSiteSettings();
     });
 
     function handleLogout() {
@@ -24,13 +32,21 @@
             href="#/"
             class="flex items-center gap-4 text-slate-900 dark:text-white cursor-pointer hover:opacity-90 transition-opacity"
         >
-            <div class="size-8 text-primary">
-                <span class="material-symbols-outlined text-4xl"
-                    >local_library</span
-                >
-            </div>
+            {#if $logoFullUrl}
+                <img
+                    src={$logoFullUrl}
+                    alt="Logo"
+                    class="w-8 h-8 object-contain"
+                />
+            {:else}
+                <div class="size-8 text-primary">
+                    <span class="material-symbols-outlined text-4xl"
+                        >local_library</span
+                    >
+                </div>
+            {/if}
             <h2 class="text-xl font-bold leading-tight tracking-[-0.015em]">
-                {appName}
+                {$appName}
             </h2>
         </a>
 
@@ -117,22 +133,34 @@
             <div class="grid grid-cols-1 md:grid-cols-4 gap-12 mb-12">
                 <div class="col-span-1 md:col-span-1">
                     <div class="flex items-center gap-2 mb-4">
-                        <div class="size-6 text-primary">
-                            <span class="material-symbols-outlined text-3xl"
-                                >local_library</span
-                            >
-                        </div>
+                        {#if $logoFullUrl}
+                            <img
+                                src={$logoFullUrl}
+                                alt="Logo"
+                                class="w-6 h-6 object-contain"
+                            />
+                        {:else}
+                            <div class="size-6 text-primary">
+                                <span class="material-symbols-outlined text-3xl"
+                                    >local_library</span
+                                >
+                            </div>
+                        {/if}
                         <h3
                             class="text-xl font-bold text-slate-900 dark:text-white"
                         >
-                            {appName}
+                            {$appName}
                         </h3>
                     </div>
                     <p
                         class="text-slate-500 dark:text-slate-400 text-sm leading-relaxed mb-6"
                     >
-                        Demokratisasi akses ke pengetahuan ilmiah dunia.
-                        Membangun infrastruktur untuk sains terbuka.
+                        {#if $aboutText}
+                            {$aboutText}
+                        {:else}
+                            Demokratisasi akses ke pengetahuan ilmiah dunia.
+                            Membangun infrastruktur untuk sains terbuka.
+                        {/if}
                     </p>
                     <div class="flex gap-4">
                         <a
@@ -259,7 +287,11 @@
                 <p
                     class="text-slate-400 dark:text-slate-600 text-sm text-center md:text-left"
                 >
-                    © 2025 {appName} Digital Repository. All rights reserved.
+                    {#if $footerText}
+                        {$footerText}
+                    {:else}
+                        © 2025 {$appName} Digital Repository. All rights reserved.
+                    {/if}
                 </p>
                 <div
                     class="flex gap-6 text-sm text-slate-400 dark:text-slate-600"
