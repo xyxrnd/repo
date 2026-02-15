@@ -1,0 +1,39 @@
+documentdetail mengambil data berdasarkan inputan dari halaman documentadd. jika pada halaman document add mengunci beberapa file maka di halaman documentdetail tidak bisa di preview atau di download file yang dikunci tersebut melainkan hanya bisa meminta akses dengan beberapa form inputan seperti masukan alaman email, upload KTM, dan nama.
+
+Thought for 1s
+
+
+Saya perlu memahami struktur saat ini terlebih dahulu. Mari saya periksa file-file terkait:
+
+Analyzed
+DocumentDetail.svelte#L1-800
+Analyzed
+DocumentAdd.svelte#L1-518
+Analyzed
+DocumentDetail.svelte#L800-893
+Now let me check the backend for access request handling:
+
+Searched
+access_request
+0 results
+Searched
+*access*
+0 results
+Belum ada fitur access request di backend. Let me check the backend main.go for existing routes and the database setup:
+
+Analyzed
+main.go#L1-65
+Analyzed
+database.go#L1-113
+Sekarang saya memahami seluruh arsitekturnya. Saya perlu:
+
+Backend: Buat tabel access_requests + handler API untuk submit & list access requests
+Frontend: Ubah 
+DocumentDetail.svelte
+ — file terkunci tidak bisa preview/download, tapi menampilkan form "Minta Akses" (email, nama, upload KTM)
+Mari mulai dari backend:
+
+Edited
+database.go
++14
+-0

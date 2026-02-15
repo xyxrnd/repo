@@ -92,6 +92,20 @@ func runMigrations(pool *pgxpool.Pool) {
 			value TEXT DEFAULT '',
 			updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 		)`,
+		// Tabel access_requests untuk permintaan akses file terkunci
+		`CREATE TABLE IF NOT EXISTS access_requests (
+			id UUID PRIMARY KEY,
+			document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+			file_id UUID NOT NULL REFERENCES document_files(id) ON DELETE CASCADE,
+			nama VARCHAR(255) NOT NULL,
+			email VARCHAR(255) NOT NULL,
+			ktm_path VARCHAR(500) DEFAULT '',
+			status VARCHAR(50) DEFAULT 'pending',
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_access_requests_doc_id ON access_requests(document_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_access_requests_file_id ON access_requests(file_id)`,
 	}
 
 	for _, q := range queries {
