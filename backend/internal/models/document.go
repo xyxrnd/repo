@@ -55,3 +55,17 @@ type UpdateDocumentRequest struct {
 	ProdiID         string `json:"prodi_id"`
 	DosenPembimbing string `json:"dosen_pembimbing"`
 }
+
+// AccessRequest mewakili permintaan akses ke file yang terkunci
+type AccessRequest struct {
+	ID          string    `json:"id"`
+	DocumentID  string    `json:"document_id"`
+	FileID      string    `json:"file_id"`
+	Nama        string    `json:"nama"`
+	Email       string    `json:"email"`
+	KtmPath     string    `json:"ktm_path,omitempty"`
+	Status      string    `json:"status"`                 // pending, approved, rejected
+	AccessToken string    `json:"access_token,omitempty"` // token yang dikirim via email
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}

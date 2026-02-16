@@ -19,6 +19,7 @@
   import FakultasList from "./pages/Fakultas/FakultasList.svelte";
   import ProdiList from "./pages/Prodi/ProdiList.svelte";
   import SystemSettings from "./pages/Admin/SystemSettings.svelte";
+  import AccessRequestList from "./pages/Admin/AccessRequestList.svelte";
 
   // Auth Pages
   import LoginPage from "./pages/Auth/LoginPage.svelte";
@@ -100,6 +101,8 @@
     "/settings": protectedRoute(Settings),
     "/system-settings": protectedRoute(SystemSettings),
     "/admin/system-settings": protectedRoute(SystemSettings),
+    "/access-requests": protectedRoute(AccessRequestList),
+    "/admin/access-requests": protectedRoute(AccessRequestList),
 
     // Catch-all
     "*": NotFound,

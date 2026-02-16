@@ -106,6 +106,9 @@ func runMigrations(pool *pgxpool.Pool) {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_access_requests_doc_id ON access_requests(document_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_access_requests_file_id ON access_requests(file_id)`,
+		// Tambah kolom access_token untuk menyimpan token akses yang dikirim via email
+		`ALTER TABLE access_requests ADD COLUMN IF NOT EXISTS access_token VARCHAR(100) DEFAULT ''`,
+		`CREATE INDEX IF NOT EXISTS idx_access_requests_token ON access_requests(access_token)`,
 	}
 
 	for _, q := range queries {

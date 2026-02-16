@@ -6,7 +6,7 @@
         downloadDocument,
     } from "../../services/documentService";
     import authService from "../../services/authService";
-    import { API_BASE_URL } from "../../config";
+    import { API_BASE_URL, API_ENDPOINTS } from "../../config";
 
     export let id = "";
 
@@ -14,6 +14,20 @@
     let loading = true;
     let error = "";
     let isLoggedIn = false;
+
+    // Access Request state
+    let showAccessForm = null; // file_id yang sedang diminta akses
+    let accessFormData = { nama: "", email: "", ktm: null };
+    let accessFormLoading = false;
+    let accessFormSuccess = "";
+    let accessFormError = "";
+
+    // Token verification state
+    let showTokenInput = null; // file_id yang sedang input token
+    let tokenValue = "";
+    let tokenLoading = false;
+    let tokenError = "";
+    let unlockedFiles = {}; // { file_id: { file_path, file_name } }
 
     // Get ID from route params
     $: if ($params && $params.id) {
@@ -44,25 +58,178 @@
     }
 
     function handleFileDownload(file) {
-        if (file.is_locked && !isLoggedIn) {
-            alert(
-                "File ini terkunci. Silakan login terlebih dahulu untuk mengunduh.",
-            );
-            window.location.hash = "#/login";
+        if (file.is_locked) {
+            showAccessForm = file.id;
+            accessFormError = "";
+            accessFormSuccess = "";
             return;
         }
         window.open(`${API_BASE_URL}/${file.file_path}`, "_blank");
     }
 
     function handleFilePreview(file) {
-        if (file.is_locked && !isLoggedIn) {
-            alert(
-                "File ini terkunci. Silakan login terlebih dahulu untuk melihat preview.",
-            );
-            window.location.hash = "#/login";
+        if (file.is_locked) {
+            showAccessForm = file.id;
+            accessFormError = "";
+            accessFormSuccess = "";
             return;
         }
         window.open(`${API_BASE_URL}/${file.file_path}`, "_blank");
+    }
+
+    function openAccessForm(fileId) {
+        showAccessForm = fileId;
+        accessFormData = { nama: "", email: "", ktm: null };
+        accessFormSuccess = "";
+        accessFormError = "";
+    }
+
+    function closeAccessForm() {
+        showAccessForm = null;
+        accessFormData = { nama: "", email: "", ktm: null };
+        accessFormSuccess = "";
+        accessFormError = "";
+    }
+
+    function handleKtmUpload(event) {
+        const file = event.target.files[0];
+        if (file) {
+            accessFormData.ktm = file;
+        }
+    }
+
+    // Token verification functions
+    function openTokenInput(fileId) {
+        showTokenInput = fileId;
+        tokenValue = "";
+        tokenError = "";
+    }
+
+    function closeTokenInput() {
+        showTokenInput = null;
+        tokenValue = "";
+        tokenError = "";
+    }
+
+    async function verifyToken() {
+        if (!tokenValue.trim()) {
+            tokenError = "Masukkan token akses.";
+            return;
+        }
+
+        try {
+            tokenLoading = true;
+            tokenError = "";
+
+            const response = await fetch(API_ENDPOINTS.VERIFY_ACCESS_TOKEN, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    file_id: showTokenInput,
+                    token: tokenValue.trim(),
+                }),
+            });
+
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(text || "Token tidak valid");
+            }
+
+            const data = await response.json();
+            // File unlocked! Store the info
+            unlockedFiles = {
+                ...unlockedFiles,
+                [showTokenInput]: {
+                    file_path: data.file_path,
+                    file_name: data.file_name,
+                },
+            };
+            showTokenInput = null;
+            tokenValue = "";
+        } catch (e) {
+            tokenError = e.message || "Token tidak valid atau belum disetujui.";
+        } finally {
+            tokenLoading = false;
+        }
+    }
+
+    function isFileUnlocked(fileId) {
+        return !!unlockedFiles[fileId];
+    }
+
+    function handleUnlockedPreview(fileId) {
+        const info = unlockedFiles[fileId];
+        if (info) {
+            window.open(`${API_BASE_URL}/${info.file_path}`, "_blank");
+        }
+    }
+
+    function handleUnlockedDownload(fileId) {
+        const info = unlockedFiles[fileId];
+        if (info) {
+            const link = document.createElement("a");
+            link.href = `${API_BASE_URL}/${info.file_path}`;
+            link.download = info.file_name;
+            link.click();
+        }
+    }
+
+    async function submitAccessRequest() {
+        if (!accessFormData.nama.trim() || !accessFormData.email.trim()) {
+            accessFormError = "Nama dan email wajib diisi.";
+            return;
+        }
+
+        // Simple email validation
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(accessFormData.email.trim())) {
+            accessFormError = "Format email tidak valid.";
+            return;
+        }
+
+        if (!accessFormData.ktm) {
+            accessFormError = "Upload KTM wajib dilakukan.";
+            return;
+        }
+
+        try {
+            accessFormLoading = true;
+            accessFormError = "";
+
+            const formData = new FormData();
+            formData.append("document_id", doc.id);
+            formData.append("file_id", showAccessForm);
+            formData.append("nama", accessFormData.nama.trim());
+            formData.append("email", accessFormData.email.trim());
+            if (accessFormData.ktm) {
+                formData.append("ktm", accessFormData.ktm);
+            }
+
+            const response = await fetch(API_ENDPOINTS.ACCESS_REQUESTS, {
+                method: "POST",
+                body: formData,
+            });
+
+            if (response.status === 409) {
+                accessFormError =
+                    "Anda sudah memiliki permintaan akses yang masih menunggu persetujuan untuk file ini.";
+                return;
+            }
+
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(text || "Gagal mengirim permintaan akses");
+            }
+
+            accessFormSuccess =
+                "Permintaan akses berhasil dikirim! Silakan tunggu persetujuan dari admin.";
+            accessFormData = { nama: "", email: "", ktm: null };
+        } catch (e) {
+            accessFormError =
+                e.message || "Terjadi kesalahan saat mengirim permintaan.";
+        } finally {
+            accessFormLoading = false;
+        }
     }
 
     function formatDate(dateString) {
@@ -550,15 +717,25 @@
                                         <div class="flex items-center gap-4">
                                             <!-- File icon -->
                                             <div
-                                                class="w-10 h-10 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0"
+                                                class="w-10 h-10 rounded-lg {file.is_locked
+                                                    ? 'bg-amber-100 dark:bg-amber-900/30'
+                                                    : 'bg-red-100 dark:bg-red-900/30'} flex items-center justify-center flex-shrink-0"
                                             >
-                                                <span
-                                                    class="material-symbols-outlined text-red-500"
-                                                    style="font-size: 22px;"
-                                                    >{getFileIcon(
-                                                        file.file_name,
-                                                    )}</span
-                                                >
+                                                {#if file.is_locked}
+                                                    <span
+                                                        class="material-symbols-outlined text-amber-500"
+                                                        style="font-size: 22px;"
+                                                        >lock</span
+                                                    >
+                                                {:else}
+                                                    <span
+                                                        class="material-symbols-outlined text-red-500"
+                                                        style="font-size: 22px;"
+                                                        >{getFileIcon(
+                                                            file.file_name,
+                                                        )}</span
+                                                    >
+                                                {/if}
                                             </div>
 
                                             <!-- File info -->
@@ -580,7 +757,7 @@
                                                                 style="font-size: 11px;"
                                                                 >lock</span
                                                             >
-                                                            Login Required
+                                                            Terkunci
                                                         </span>
                                                     {/if}
                                                 </div>
@@ -597,42 +774,426 @@
                                             <div
                                                 class="flex items-center gap-2 flex-shrink-0"
                                             >
-                                                <button
-                                                    on:click={() =>
-                                                        handleFilePreview(file)}
-                                                    class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-primary/10 hover:text-primary rounded-lg text-xs font-semibold transition-all"
-                                                    title="Preview file"
-                                                >
-                                                    <span
-                                                        class="material-symbols-outlined"
-                                                        style="font-size: 16px;"
-                                                        >visibility</span
+                                                {#if file.is_locked && !isFileUnlocked(file.id)}
+                                                    <!-- Tombol untuk file terkunci -->
+                                                    <button
+                                                        on:click={() =>
+                                                            openAccessForm(
+                                                                file.id,
+                                                            )}
+                                                        class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/50 rounded-lg text-xs font-semibold transition-all"
+                                                        title="Minta akses file"
                                                     >
-                                                    <span
-                                                        class="hidden sm:inline"
-                                                        >Preview</span
+                                                        <span
+                                                            class="material-symbols-outlined"
+                                                            style="font-size: 16px;"
+                                                            >key</span
+                                                        >
+                                                        <span
+                                                            class="hidden sm:inline"
+                                                            >Minta Akses</span
+                                                        >
+                                                    </button>
+                                                    <button
+                                                        on:click={() =>
+                                                            openTokenInput(
+                                                                file.id,
+                                                            )}
+                                                        class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-100 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 hover:bg-sky-200 dark:hover:bg-sky-900/50 rounded-lg text-xs font-semibold transition-all"
+                                                        title="Masukkan token akses"
                                                     >
-                                                </button>
-                                                <button
-                                                    on:click={() =>
-                                                        handleFileDownload(
-                                                            file,
-                                                        )}
-                                                    class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-lg text-xs font-semibold transition-all"
-                                                    title="Download file"
-                                                >
+                                                        <span
+                                                            class="material-symbols-outlined"
+                                                            style="font-size: 16px;"
+                                                            >vpn_key</span
+                                                        >
+                                                        <span
+                                                            class="hidden sm:inline"
+                                                            >Masukkan Token</span
+                                                        >
+                                                    </button>
+                                                {:else if file.is_locked && isFileUnlocked(file.id)}
+                                                    <!-- File terkunci tapi sudah di-unlock dengan token -->
                                                     <span
-                                                        class="material-symbols-outlined"
-                                                        style="font-size: 16px;"
-                                                        >download</span
+                                                        class="inline-flex items-center gap-1 px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 text-[10px] font-bold rounded-lg"
                                                     >
-                                                    <span
-                                                        class="hidden sm:inline"
-                                                        >Download</span
+                                                        <span
+                                                            class="material-symbols-outlined"
+                                                            style="font-size: 13px;"
+                                                            >lock_open</span
+                                                        >
+                                                        Terbuka
+                                                    </span>
+                                                    <button
+                                                        on:click={() =>
+                                                            handleUnlockedPreview(
+                                                                file.id,
+                                                            )}
+                                                        class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-primary/10 hover:text-primary rounded-lg text-xs font-semibold transition-all"
+                                                        title="Preview file"
                                                     >
-                                                </button>
+                                                        <span
+                                                            class="material-symbols-outlined"
+                                                            style="font-size: 16px;"
+                                                            >visibility</span
+                                                        >
+                                                        <span
+                                                            class="hidden sm:inline"
+                                                            >Preview</span
+                                                        >
+                                                    </button>
+                                                    <button
+                                                        on:click={() =>
+                                                            handleUnlockedDownload(
+                                                                file.id,
+                                                            )}
+                                                        class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-lg text-xs font-semibold transition-all"
+                                                        title="Download file"
+                                                    >
+                                                        <span
+                                                            class="material-symbols-outlined"
+                                                            style="font-size: 16px;"
+                                                            >download</span
+                                                        >
+                                                        <span
+                                                            class="hidden sm:inline"
+                                                            >Download</span
+                                                        >
+                                                    </button>
+                                                {:else}
+                                                    <!-- Tombol Preview dan Download untuk file tidak terkunci -->
+                                                    <button
+                                                        on:click={() =>
+                                                            handleFilePreview(
+                                                                file,
+                                                            )}
+                                                        class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-primary/10 hover:text-primary rounded-lg text-xs font-semibold transition-all"
+                                                        title="Preview file"
+                                                    >
+                                                        <span
+                                                            class="material-symbols-outlined"
+                                                            style="font-size: 16px;"
+                                                            >visibility</span
+                                                        >
+                                                        <span
+                                                            class="hidden sm:inline"
+                                                            >Preview</span
+                                                        >
+                                                    </button>
+                                                    <button
+                                                        on:click={() =>
+                                                            handleFileDownload(
+                                                                file,
+                                                            )}
+                                                        class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-lg text-xs font-semibold transition-all"
+                                                        title="Download file"
+                                                    >
+                                                        <span
+                                                            class="material-symbols-outlined"
+                                                            style="font-size: 16px;"
+                                                            >download</span
+                                                        >
+                                                        <span
+                                                            class="hidden sm:inline"
+                                                            >Download</span
+                                                        >
+                                                    </button>
+                                                {/if}
                                             </div>
                                         </div>
+
+                                        <!-- Access Request Form (inline, muncul di bawah file terkunci) -->
+                                        {#if showAccessForm === file.id}
+                                            <div
+                                                class="mt-4 p-5 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/10 dark:to-orange-900/10 rounded-xl border border-amber-200/60 dark:border-amber-800/30 animate-slideDown"
+                                            >
+                                                <div
+                                                    class="flex items-center justify-between mb-4"
+                                                >
+                                                    <h4
+                                                        class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2"
+                                                    >
+                                                        <span
+                                                            class="material-symbols-outlined text-amber-500"
+                                                            style="font-size: 18px;"
+                                                            >key</span
+                                                        >
+                                                        Formulir Permintaan Akses
+                                                    </h4>
+                                                    <button
+                                                        on:click={closeAccessForm}
+                                                        class="p-1 hover:bg-amber-200/50 dark:hover:bg-amber-900/30 rounded-lg transition-colors"
+                                                        title="Tutup formulir"
+                                                    >
+                                                        <span
+                                                            class="material-symbols-outlined text-slate-400"
+                                                            style="font-size: 18px;"
+                                                            >close</span
+                                                        >
+                                                    </button>
+                                                </div>
+
+                                                {#if accessFormSuccess}
+                                                    <div
+                                                        class="flex items-start gap-3 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800/30 rounded-lg"
+                                                    >
+                                                        <span
+                                                            class="material-symbols-outlined text-green-500 flex-shrink-0"
+                                                            style="font-size: 20px;"
+                                                            >check_circle</span
+                                                        >
+                                                        <div>
+                                                            <p
+                                                                class="text-sm font-medium text-green-800 dark:text-green-300"
+                                                            >
+                                                                {accessFormSuccess}
+                                                            </p>
+                                                            <button
+                                                                on:click={closeAccessForm}
+                                                                class="mt-2 text-xs font-semibold text-green-600 hover:text-green-700 underline"
+                                                            >
+                                                                Tutup
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                {:else}
+                                                    <div class="space-y-3">
+                                                        <!-- Nama -->
+                                                        <div>
+                                                            <label
+                                                                for="access-nama-{file.id}"
+                                                                class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1"
+                                                            >
+                                                                Nama Lengkap <span
+                                                                    class="text-red-500"
+                                                                    >*</span
+                                                                >
+                                                            </label>
+                                                            <input
+                                                                id="access-nama-{file.id}"
+                                                                type="text"
+                                                                bind:value={
+                                                                    accessFormData.nama
+                                                                }
+                                                                placeholder="Masukkan nama lengkap Anda"
+                                                                class="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-amber-400 focus:border-amber-400 text-slate-900 dark:text-white placeholder-slate-400 transition-all"
+                                                            />
+                                                        </div>
+
+                                                        <!-- Email -->
+                                                        <div>
+                                                            <label
+                                                                for="access-email-{file.id}"
+                                                                class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1"
+                                                            >
+                                                                Alamat Email <span
+                                                                    class="text-red-500"
+                                                                    >*</span
+                                                                >
+                                                            </label>
+                                                            <input
+                                                                id="access-email-{file.id}"
+                                                                type="email"
+                                                                bind:value={
+                                                                    accessFormData.email
+                                                                }
+                                                                placeholder="contoh@email.com"
+                                                                class="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-amber-400 focus:border-amber-400 text-slate-900 dark:text-white placeholder-slate-400 transition-all"
+                                                            />
+                                                        </div>
+
+                                                        <!-- Upload KTM -->
+                                                        <div>
+                                                            <label
+                                                                for="access-ktm-{file.id}"
+                                                                class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1"
+                                                            >
+                                                                Upload KTM
+                                                                (Kartu Tanda
+                                                                Mahasiswa) <span
+                                                                    class="text-red-500"
+                                                                    >*</span
+                                                                >
+                                                            </label>
+                                                            <div
+                                                                class="relative"
+                                                            >
+                                                                <input
+                                                                    id="access-ktm-{file.id}"
+                                                                    type="file"
+                                                                    accept="image/*,.pdf"
+                                                                    on:change={handleKtmUpload}
+                                                                    class="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-amber-400 focus:border-amber-400 text-slate-900 dark:text-white file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-amber-100 file:text-amber-600 hover:file:bg-amber-200 transition-all"
+                                                                />
+                                                            </div>
+                                                            {#if accessFormData.ktm}
+                                                                <p
+                                                                    class="mt-1 text-xs text-green-600 flex items-center gap-1"
+                                                                >
+                                                                    <span
+                                                                        class="material-symbols-outlined"
+                                                                        style="font-size: 14px;"
+                                                                        >check_circle</span
+                                                                    >
+                                                                    {accessFormData
+                                                                        .ktm
+                                                                        .name}
+                                                                </p>
+                                                            {/if}
+                                                            <p
+                                                                class="mt-1 text-[11px] text-slate-400"
+                                                            >
+                                                                Format: JPG,
+                                                                PNG, PDF.
+                                                                Maksimum 5 MB.
+                                                            </p>
+                                                        </div>
+
+                                                        <!-- Error Message -->
+                                                        {#if accessFormError}
+                                                            <div
+                                                                class="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 rounded-lg"
+                                                            >
+                                                                <span
+                                                                    class="material-symbols-outlined text-red-500 flex-shrink-0"
+                                                                    style="font-size: 16px;"
+                                                                    >error</span
+                                                                >
+                                                                <p
+                                                                    class="text-xs text-red-600 dark:text-red-400"
+                                                                >
+                                                                    {accessFormError}
+                                                                </p>
+                                                            </div>
+                                                        {/if}
+
+                                                        <!-- Buttons -->
+                                                        <div
+                                                            class="flex items-center gap-2 pt-1"
+                                                        >
+                                                            <button
+                                                                on:click={submitAccessRequest}
+                                                                disabled={accessFormLoading}
+                                                                class="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-lg text-xs font-bold shadow-sm hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                                            >
+                                                                {#if accessFormLoading}
+                                                                    <span
+                                                                        class="material-symbols-outlined animate-spin"
+                                                                        style="font-size: 16px;"
+                                                                        >progress_activity</span
+                                                                    >
+                                                                    Mengirim...
+                                                                {:else}
+                                                                    <span
+                                                                        class="material-symbols-outlined"
+                                                                        style="font-size: 16px;"
+                                                                        >send</span
+                                                                    >
+                                                                    Kirim Permintaan
+                                                                {/if}
+                                                            </button>
+                                                            <button
+                                                                on:click={closeAccessForm}
+                                                                class="inline-flex items-center gap-1 px-3 py-2 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg text-xs font-semibold transition-all"
+                                                            >
+                                                                Batal
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                {/if}
+                                            </div>
+                                        {/if}
+
+                                        <!-- Token Input Form (inline, muncul di bawah file terkunci) -->
+                                        {#if showTokenInput === file.id}
+                                            <div
+                                                class="mt-4 p-4 bg-gradient-to-br from-sky-50 to-blue-50 dark:from-sky-900/10 dark:to-blue-900/10 rounded-xl border border-sky-200/60 dark:border-sky-800/30 animate-slideDown"
+                                            >
+                                                <div
+                                                    class="flex items-center justify-between mb-3"
+                                                >
+                                                    <h4
+                                                        class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2"
+                                                    >
+                                                        <span
+                                                            class="material-symbols-outlined text-sky-500"
+                                                            style="font-size: 18px;"
+                                                            >vpn_key</span
+                                                        >
+                                                        Masukkan Token Akses
+                                                    </h4>
+                                                    <button
+                                                        on:click={closeTokenInput}
+                                                        class="p-1 hover:bg-sky-200/50 dark:hover:bg-sky-900/30 rounded-lg transition-colors"
+                                                        title="Tutup"
+                                                    >
+                                                        <span
+                                                            class="material-symbols-outlined text-slate-400"
+                                                            style="font-size: 18px;"
+                                                            >close</span
+                                                        >
+                                                    </button>
+                                                </div>
+                                                <p
+                                                    class="text-xs text-slate-500 dark:text-slate-400 mb-3"
+                                                >
+                                                    Masukkan token yang telah
+                                                    dikirimkan ke email Anda
+                                                    untuk membuka akses file
+                                                    ini.
+                                                </p>
+                                                <div
+                                                    class="flex items-center gap-2"
+                                                >
+                                                    <input
+                                                        type="text"
+                                                        bind:value={tokenValue}
+                                                        placeholder="Masukkan token akses Anda"
+                                                        class="flex-1 px-3 py-2.5 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-sky-400 focus:border-sky-400 text-slate-900 dark:text-white placeholder-slate-400 transition-all font-mono tracking-wider"
+                                                        on:keydown={(e) =>
+                                                            e.key === "Enter" &&
+                                                            verifyToken()}
+                                                    />
+                                                    <button
+                                                        on:click={verifyToken}
+                                                        disabled={tokenLoading}
+                                                        class="inline-flex items-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-sky-500 to-blue-500 hover:from-sky-600 hover:to-blue-600 text-white rounded-lg text-xs font-bold shadow-sm hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    >
+                                                        {#if tokenLoading}
+                                                            <span
+                                                                class="material-symbols-outlined animate-spin"
+                                                                style="font-size: 16px;"
+                                                                >progress_activity</span
+                                                            >
+                                                            Verifikasi...
+                                                        {:else}
+                                                            <span
+                                                                class="material-symbols-outlined"
+                                                                style="font-size: 16px;"
+                                                                >lock_open</span
+                                                            >
+                                                            Buka
+                                                        {/if}
+                                                    </button>
+                                                </div>
+                                                {#if tokenError}
+                                                    <div
+                                                        class="flex items-start gap-2 mt-2 p-2.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 rounded-lg"
+                                                    >
+                                                        <span
+                                                            class="material-symbols-outlined text-red-500 flex-shrink-0"
+                                                            style="font-size: 14px;"
+                                                            >error</span
+                                                        >
+                                                        <p
+                                                            class="text-xs text-red-600 dark:text-red-400"
+                                                        >
+                                                            {tokenError}
+                                                        </p>
+                                                    </div>
+                                                {/if}
+                                            </div>
+                                        {/if}
                                     </div>
                                 {/each}
                             </div>
@@ -648,15 +1209,11 @@
                                             class="material-symbols-outlined"
                                             style="font-size: 14px;">info</span
                                         >
-                                        Beberapa file dikunci dan memerlukan login
-                                        untuk mengunduh.
-                                        {#if !isLoggedIn}
-                                            <a
-                                                href="#/login"
-                                                class="underline font-semibold hover:text-amber-700"
-                                                >Login di sini</a
-                                            >
-                                        {/if}
+                                        Beberapa file dikunci. Klik
+                                        <strong>"Minta Akses"</strong>
+                                        untuk mengajukan permintaan, atau klik
+                                        <strong>"Masukkan Token"</strong> jika Anda
+                                        sudah memiliki token akses dari email.
                                     </p>
                                 </div>
                             {/if}
@@ -890,3 +1447,21 @@
         </div>
     {/if}
 </div>
+
+<style>
+    @keyframes slideDown {
+        from {
+            opacity: 0;
+            transform: translateY(-8px);
+            max-height: 0;
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+            max-height: 500px;
+        }
+    }
+    .animate-slideDown {
+        animation: slideDown 0.3s ease-out forwards;
+    }
+</style>

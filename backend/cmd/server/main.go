@@ -47,6 +47,15 @@ func main() {
 	http.HandleFunc("/api/auth/register", handlers.RegisterHandler)
 	http.HandleFunc("/api/auth/me", middleware.AuthMiddleware(handlers.GetMeHandler))
 
+	// --- Access Request Routes ---
+	// POST: Public (siapa saja bisa request akses)
+	// GET: Admin (list semua access requests)
+	http.HandleFunc("/api/access-requests", handlers.AccessRequestHandler)
+	http.HandleFunc("/api/access-requests/", middleware.AdminMiddleware(handlers.AccessRequestByIdHandler))
+
+	// --- Verify Access Token (Public) ---
+	http.HandleFunc("/api/verify-access-token", handlers.VerifyAccessTokenHandler)
+
 	// --- User Routes (Admin Only) ---
 	// Hanya admin yang bisa mengelola user
 	http.HandleFunc("/api/users", middleware.AdminMiddleware(handlers.UsersHandler))

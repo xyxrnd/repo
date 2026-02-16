@@ -39,6 +39,11 @@ export const API_ENDPOINTS = {
     // Site Settings
     SITE_SETTINGS: `${API_BASE_URL}/api/site-settings`,
     SITE_LOGO_UPLOAD: `${API_BASE_URL}/api/site-settings/logo`,
+
+    // Access Requests
+    ACCESS_REQUESTS: `${API_BASE_URL}/api/access-requests`,
+    ACCESS_REQUEST_BY_ID: (id) => `${API_BASE_URL}/api/access-requests/${id}`,
+    VERIFY_ACCESS_TOKEN: `${API_BASE_URL}/api/verify-access-token`,
 };
 
 // App Configuration
