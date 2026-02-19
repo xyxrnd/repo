@@ -26,14 +26,24 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 
 	"repository-un/internal/config"
 	"repository-un/internal/handlers"
 	"repository-un/internal/middleware"
+
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	// Load .env file (jika ada)
+	if err := godotenv.Load(); err != nil {
+		log.Println("⚠️  File .env tidak ditemukan, menggunakan environment variables dari OS")
+	} else {
+		log.Println("✅ Konfigurasi .env berhasil dimuat")
+	}
+
 	// Koneksi ke database
 	config.ConnectDB()
 
@@ -65,6 +75,7 @@ func main() {
 	// CRUD dokumen
 	http.HandleFunc("/uploads", handlers.UploadHandler)
 	http.HandleFunc("/api/documents", handlers.DocumentsHandler)
+	http.HandleFunc("/api/documents/popular", handlers.PopularDocumentsHandler) // Must be before /api/documents/
 	http.HandleFunc("/api/documents/", handlers.DocumentByIdHandler)
 
 	// --- File Routes ---
@@ -73,13 +84,35 @@ func main() {
 	// Serve uploaded files statically (for individual file downloads)
 	http.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("uploads"))))
 
-	// --- Fakultas Routes (Admin Only) ---
-	http.HandleFunc("/api/fakultas", middleware.AdminMiddleware(handlers.FakultasHandler))
+	// --- Fakultas Routes ---
+	// GET: Public (untuk filter dropdown)
+	// POST: Admin only
+	http.HandleFunc("/api/fakultas", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet || r.Method == http.MethodOptions {
+			handlers.FakultasHandler(w, r)
+		} else {
+			middleware.AdminMiddleware(handlers.FakultasHandler)(w, r)
+		}
+	})
 	http.HandleFunc("/api/fakultas/", middleware.AdminMiddleware(handlers.FakultasByIdHandler))
 
-	// --- Prodi Routes (Admin Only) ---
-	http.HandleFunc("/api/prodi", middleware.AdminMiddleware(handlers.ProdiHandler))
+	// --- Prodi Routes ---
+	// GET: Public (untuk filter dropdown)
+	// POST: Admin only
+	http.HandleFunc("/api/prodi", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet || r.Method == http.MethodOptions {
+			handlers.ProdiHandler(w, r)
+		} else {
+			middleware.AdminMiddleware(handlers.ProdiHandler)(w, r)
+		}
+	})
 	http.HandleFunc("/api/prodi/", middleware.AdminMiddleware(handlers.ProdiByIdHandler))
+
+	// --- Site Settings Routes ---
+	// GET: Public (untuk ambil nama app, logo, dll)
+	// PUT: Admin only (untuk update settings)
+	http.HandleFunc("/api/site-settings", handlers.SiteSettingsHandler)
+	http.HandleFunc("/api/site-settings/logo", middleware.AdminMiddleware(handlers.SiteLogoHandler))
 
 	// ============================================
 	// START SERVER
@@ -100,5 +133,7 @@ func main() {
 	fmt.Println("  GET  /api/prodi          - List prodi (admin)")
 	fmt.Println("")
 
-	http.ListenAndServe(":8080", nil)
+	if err := http.ListenAndServe(":8080", nil); err != nil {
+		log.Fatal("❌ Server gagal start: ", err)
+	}
 }

@@ -85,6 +85,8 @@ func listDocuments(w http.ResponseWriter, r *http.Request) {
 		        COALESCE(d.prodi_id::text, '') as prodi_id,
 		        COALESCE(p.nama, '') as prodi_nama,
 		        COALESCE(d.dosen_pembimbing, '') as dosen_pembimbing,
+		        COALESCE(d.dosen_pembimbing_2, '') as dosen_pembimbing_2,
+		        COALESCE(d.kata_kunci, '') as kata_kunci,
 		        COALESCE(d.view_count, 0) as view_count
 		 FROM documents d
 		 LEFT JOIN fakultas f ON d.fakultas_id = f.id
@@ -113,6 +115,8 @@ func listDocuments(w http.ResponseWriter, r *http.Request) {
 			&d.ProdiID,
 			&d.ProdiNama,
 			&d.DosenPembimbing,
+			&d.DosenPembimbing2,
+			&d.KataKunci,
 			&d.ViewCount,
 		)
 		if err != nil {
@@ -164,6 +168,8 @@ func getDocumentById(w http.ResponseWriter, r *http.Request, id string) {
 		        COALESCE(d.prodi_id::text, '') as prodi_id,
 		        COALESCE(p.nama, '') as prodi_nama,
 		        COALESCE(d.dosen_pembimbing, '') as dosen_pembimbing,
+		        COALESCE(d.dosen_pembimbing_2, '') as dosen_pembimbing_2,
+		        COALESCE(d.kata_kunci, '') as kata_kunci,
 		        COALESCE(d.view_count, 0) as view_count
 		 FROM documents d
 		 LEFT JOIN fakultas f ON d.fakultas_id = f.id
@@ -181,6 +187,8 @@ func getDocumentById(w http.ResponseWriter, r *http.Request, id string) {
 		&d.ProdiID,
 		&d.ProdiNama,
 		&d.DosenPembimbing,
+		&d.DosenPembimbing2,
+		&d.KataKunci,
 		&d.ViewCount,
 	)
 
@@ -211,6 +219,8 @@ func createDocument(w http.ResponseWriter, r *http.Request) {
 	fakultasID := r.FormValue("fakultas_id")
 	prodiID := r.FormValue("prodi_id")
 	dosenPembimbing := r.FormValue("dosen_pembimbing")
+	dosenPembimbing2 := r.FormValue("dosen_pembimbing_2")
+	kataKunci := r.FormValue("kata_kunci")
 
 	if judul == "" || penulis == "" || jenisFile == "" {
 		http.Error(w, "Metadata tidak lengkap (judul, penulis, jenis_file wajib)", http.StatusBadRequest)
@@ -310,14 +320,14 @@ func createDocument(w http.ResponseWriter, r *http.Request) {
 
 	// STEP 1: Insert dokumen ke database DULU (parent record)
 	query := `
-		INSERT INTO documents (id, judul, penulis, abstrak, jenis_file, file_path, status, fakultas_id, prodi_id, dosen_pembimbing)
+		INSERT INTO documents (id, judul, penulis, abstrak, jenis_file, file_path, status, fakultas_id, prodi_id, dosen_pembimbing, dosen_pembimbing_2, kata_kunci)
 		VALUES ($1, $2, $3, $4, $5, $6, $7,
 			CASE WHEN $8 = '' THEN NULL ELSE $8::uuid END,
 			CASE WHEN $9 = '' THEN NULL ELSE $9::uuid END,
-			$10)
+			$10, $11, $12)
 	`
 	_, err := config.DB.Exec(context.Background(), query,
-		docID, judul, penulis, abstrak, jenisFile, mainFilePath, status, fakultasID, prodiID, dosenPembimbing)
+		docID, judul, penulis, abstrak, jenisFile, mainFilePath, status, fakultasID, prodiID, dosenPembimbing, dosenPembimbing2, kataKunci)
 
 	if err != nil {
 		http.Error(w, "Gagal menyimpan metadata: "+err.Error(), http.StatusInternalServerError)
@@ -335,16 +345,18 @@ func createDocument(w http.ResponseWriter, r *http.Request) {
 
 	// Response
 	doc := models.Document{
-		ID:              docID.String(),
-		Judul:           judul,
-		Penulis:         penulis,
-		Abstrak:         abstrak,
-		JenisFile:       jenisFile,
-		FakultasID:      fakultasID,
-		ProdiID:         prodiID,
-		DosenPembimbing: dosenPembimbing,
-		Status:          status,
-		Files:           getDocumentFiles(docID.String()),
+		ID:               docID.String(),
+		Judul:            judul,
+		Penulis:          penulis,
+		Abstrak:          abstrak,
+		JenisFile:        jenisFile,
+		FakultasID:       fakultasID,
+		ProdiID:          prodiID,
+		DosenPembimbing:  dosenPembimbing,
+		DosenPembimbing2: dosenPembimbing2,
+		KataKunci:        kataKunci,
+		Status:           status,
+		Files:            getDocumentFiles(docID.String()),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -364,6 +376,8 @@ func updateDocument(w http.ResponseWriter, r *http.Request, id string) {
 	fakultasID := r.FormValue("fakultas_id")
 	prodiID := r.FormValue("prodi_id")
 	dosenPembimbing := r.FormValue("dosen_pembimbing")
+	dosenPembimbing2 := r.FormValue("dosen_pembimbing_2")
+	kataKunci := r.FormValue("kata_kunci")
 
 	if judul == "" || penulis == "" || jenisFile == "" {
 		http.Error(w, "Metadata tidak lengkap", http.StatusBadRequest)
@@ -380,11 +394,13 @@ func updateDocument(w http.ResponseWriter, r *http.Request, id string) {
 		SET judul = $1, penulis = $2, abstrak = $3, jenis_file = $4, status = $5,
 		    fakultas_id = CASE WHEN $6 = '' THEN NULL ELSE $6::uuid END,
 		    prodi_id = CASE WHEN $7 = '' THEN NULL ELSE $7::uuid END,
-		    dosen_pembimbing = $8
-		WHERE id = $9
+		    dosen_pembimbing = $8,
+		    dosen_pembimbing_2 = $9,
+		    kata_kunci = $10
+		WHERE id = $11
 	`
 	_, err := config.DB.Exec(context.Background(), query,
-		judul, penulis, abstrak, jenisFile, status, fakultasID, prodiID, dosenPembimbing, id)
+		judul, penulis, abstrak, jenisFile, status, fakultasID, prodiID, dosenPembimbing, dosenPembimbing2, kataKunci, id)
 
 	if err != nil {
 		http.Error(w, "Gagal update dokumen: "+err.Error(), http.StatusInternalServerError)
@@ -478,15 +494,17 @@ func updateDocument(w http.ResponseWriter, r *http.Request, id string) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"id":               id,
-		"judul":            judul,
-		"penulis":          penulis,
-		"abstrak":          abstrak,
-		"jenis_file":       jenisFile,
-		"status":           status,
-		"fakultas_id":      fakultasID,
-		"prodi_id":         prodiID,
-		"dosen_pembimbing": dosenPembimbing,
+		"id":                 id,
+		"judul":              judul,
+		"penulis":            penulis,
+		"abstrak":            abstrak,
+		"jenis_file":         jenisFile,
+		"status":             status,
+		"fakultas_id":        fakultasID,
+		"prodi_id":           prodiID,
+		"dosen_pembimbing":   dosenPembimbing,
+		"dosen_pembimbing_2": dosenPembimbing2,
+		"kata_kunci":         kataKunci,
 	})
 }
 
@@ -546,6 +564,7 @@ func recordDocumentView(documentID string, r *http.Request) {
 func PopularDocumentsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodOptions {
 		middleware.EnableCORS(w)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 	middleware.EnableCORS(w)
@@ -569,6 +588,8 @@ func PopularDocumentsHandler(w http.ResponseWriter, r *http.Request) {
 		        COALESCE(d.prodi_id::text, '') as prodi_id,
 		        COALESCE(p.nama, '') as prodi_nama,
 		        COALESCE(d.dosen_pembimbing, '') as dosen_pembimbing,
+		        COALESCE(d.dosen_pembimbing_2, '') as dosen_pembimbing_2,
+		        COALESCE(d.kata_kunci, '') as kata_kunci,
 		        COALESCE(d.view_count, 0) as view_count
 		 FROM documents d
 		 LEFT JOIN fakultas f ON d.fakultas_id = f.id
@@ -597,6 +618,8 @@ func PopularDocumentsHandler(w http.ResponseWriter, r *http.Request) {
 			&d.ProdiID,
 			&d.ProdiNama,
 			&d.DosenPembimbing,
+			&d.DosenPembimbing2,
+			&d.KataKunci,
 			&d.ViewCount,
 		)
 		if err != nil {

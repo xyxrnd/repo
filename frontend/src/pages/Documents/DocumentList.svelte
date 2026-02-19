@@ -13,13 +13,21 @@
     let searchQuery = "";
     let filterStatus = "all";
     let filterType = "all";
+    let filterFakultas = "all";
+    let filterProdi = "all";
+    let filterTahun = "all";
+
+    // Data for filter options
+    let fakultasList = [];
+    let prodiList = [];
+    let tahunList = [];
 
     // Modal state
     let showFileModal = false;
     let selectedDoc = null;
 
     onMount(async () => {
-        await loadDocuments();
+        await Promise.all([loadDocuments(), loadFakultas(), loadProdi()]);
     });
 
     async function loadDocuments() {
@@ -27,12 +35,52 @@
             loading = true;
             error = "";
             documents = await getDocuments();
+            buildTahunList();
         } catch (e) {
             error = e.message;
         } finally {
             loading = false;
         }
     }
+
+    async function loadFakultas() {
+        try {
+            const res = await fetch(API_ENDPOINTS.FAKULTAS);
+            if (res.ok) fakultasList = await res.json();
+        } catch (e) {
+            console.error("Failed to load fakultas:", e);
+        }
+    }
+
+    async function loadProdi() {
+        try {
+            const res = await fetch(API_ENDPOINTS.PRODI);
+            if (res.ok) prodiList = await res.json();
+        } catch (e) {
+            console.error("Failed to load prodi:", e);
+        }
+    }
+
+    function buildTahunList() {
+        const years = new Set();
+        documents.forEach((doc) => {
+            if (doc.created_at) {
+                years.add(new Date(doc.created_at).getFullYear());
+            }
+        });
+        tahunList = [...years].sort((a, b) => b - a);
+    }
+
+    // Reset prodi when fakultas changes
+    $: if (filterFakultas) {
+        filterProdi = "all";
+    }
+
+    // Get prodi filtered by selected fakultas
+    $: filteredProdiList =
+        filterFakultas === "all"
+            ? prodiList
+            : prodiList.filter((p) => p.fakultas_id === filterFakultas);
 
     async function handleDelete(id) {
         if (!confirm("Apakah Anda yakin ingin menghapus dokumen ini?")) return;
@@ -89,8 +137,40 @@
             filterStatus === "all" || doc.status === filterStatus;
         const matchesType =
             filterType === "all" || doc.jenis_file === filterType;
-        return matchesSearch && matchesStatus && matchesType;
+        const matchesFakultas =
+            filterFakultas === "all" || doc.fakultas_id === filterFakultas;
+        const matchesProdi =
+            filterProdi === "all" || doc.prodi_id === filterProdi;
+        const matchesTahun =
+            filterTahun === "all" ||
+            (doc.created_at &&
+                new Date(doc.created_at).getFullYear() === Number(filterTahun));
+        return (
+            matchesSearch &&
+            matchesStatus &&
+            matchesType &&
+            matchesFakultas &&
+            matchesProdi &&
+            matchesTahun
+        );
     });
+
+    let activeFilterCount;
+    $: activeFilterCount =
+        (filterStatus !== "all" ? 1 : 0) +
+        (filterType !== "all" ? 1 : 0) +
+        (filterFakultas !== "all" ? 1 : 0) +
+        (filterProdi !== "all" ? 1 : 0) +
+        (filterTahun !== "all" ? 1 : 0);
+
+    function resetFilters() {
+        searchQuery = "";
+        filterStatus = "all";
+        filterType = "all";
+        filterFakultas = "all";
+        filterProdi = "all";
+        filterTahun = "all";
+    }
 
     function formatDate(dateString) {
         const date = new Date(dateString);
@@ -168,37 +248,96 @@
 
     <!-- Filters & Search -->
     <div
-        class="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row gap-4 items-center"
+        class="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col gap-4"
     >
-        <div class="relative w-full md:w-96">
-            <span
-                class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xl"
-                >search</span
-            >
-            <input
-                bind:value={searchQuery}
-                class="w-full pl-10 pr-4 py-2 bg-slate-100 dark:bg-slate-800 border-none rounded-lg focus:ring-2 focus:ring-primary/50 text-sm transition-all"
-                placeholder="Cari judul, penulis, atau dosen pembimbing..."
-                type="text"
-            />
+        <!-- Row 1: Search + Reset -->
+        <div class="flex flex-col md:flex-row gap-4 items-center">
+            <div class="relative w-full md:flex-1">
+                <span
+                    class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xl"
+                    >search</span
+                >
+                <input
+                    bind:value={searchQuery}
+                    class="w-full pl-10 pr-4 py-2 bg-slate-100 dark:bg-slate-800 border-none rounded-lg focus:ring-2 focus:ring-primary/50 text-sm transition-all"
+                    placeholder="Cari judul, penulis, atau dosen pembimbing..."
+                    type="text"
+                />
+            </div>
+            {#if activeFilterCount > 0}
+                <button
+                    on:click={resetFilters}
+                    class="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors whitespace-nowrap"
+                >
+                    <span
+                        class="material-symbols-outlined"
+                        style="font-size: 18px;">filter_alt_off</span
+                    >
+                    Reset Filter ({activeFilterCount})
+                </button>
+            {/if}
         </div>
-        <div class="flex gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
+
+        <!-- Row 2: Filter dropdowns -->
+        <div class="flex flex-wrap gap-3 items-center">
+            <div class="flex items-center gap-2 text-slate-400">
+                <span class="material-symbols-outlined" style="font-size: 20px;"
+                    >tune</span
+                >
+                <span class="text-xs font-semibold uppercase tracking-wider"
+                    >Filter</span
+                >
+            </div>
+
             <select
                 bind:value={filterStatus}
-                class="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-sm font-medium"
+                class="px-3 py-2 bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300"
             >
                 <option value="all">Semua Status</option>
                 <option value="draft">Draft</option>
                 <option value="publish">Published</option>
             </select>
+
             <select
                 bind:value={filterType}
-                class="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-sm font-medium"
+                class="px-3 py-2 bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300"
             >
                 <option value="all">Semua Jenis</option>
                 <option value="skripsi">Skripsi</option>
                 <option value="tesis">Tesis</option>
                 <option value="jurnal">Jurnal</option>
+            </select>
+
+            <select
+                bind:value={filterFakultas}
+                class="px-3 py-2 bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300"
+            >
+                <option value="all">Semua Fakultas</option>
+                {#each fakultasList as fak}
+                    <option value={fak.id}>{fak.nama}</option>
+                {/each}
+            </select>
+
+            <select
+                bind:value={filterProdi}
+                class="px-3 py-2 bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300"
+                disabled={filterFakultas === "all" &&
+                    filteredProdiList.length === 0}
+            >
+                <option value="all">Semua Prodi</option>
+                {#each filteredProdiList as prodi}
+                    <option value={prodi.id}>{prodi.nama}</option>
+                {/each}
+            </select>
+
+            <select
+                bind:value={filterTahun}
+                class="px-3 py-2 bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300"
+            >
+                <option value="all">Semua Tahun</option>
+                {#each tahunList as tahun}
+                    <option value={tahun}>{tahun}</option>
+                {/each}
             </select>
         </div>
     </div>
@@ -232,11 +371,11 @@
                 Tidak ada dokumen
             </h3>
             <p class="text-slate-500 dark:text-slate-400 mb-6">
-                {searchQuery || filterStatus !== "all" || filterType !== "all"
+                {searchQuery || activeFilterCount > 0
                     ? "Tidak ada dokumen yang sesuai dengan filter Anda"
                     : "Mulai dengan menambahkan dokumen baru"}
             </p>
-            {#if !searchQuery && filterStatus === "all" && filterType === "all"}
+            {#if !searchQuery && activeFilterCount === 0}
                 <a
                     href="/documents/add"
                     use:link

@@ -1,9 +1,6 @@
 <script>
     import { onMount } from "svelte";
-    import {
-        getDocuments,
-        downloadDocument,
-    } from "../../services/documentService";
+    import { getDocuments } from "../../services/documentService";
 
     let documents = [];
     let loading = true;
@@ -23,10 +20,6 @@
         } finally {
             loading = false;
         }
-    }
-
-    function handleDownload(doc) {
-        downloadDocument(doc.id);
     }
 
     function formatDate(dateString) {
@@ -216,15 +209,6 @@
                                     {formatDate(doc.created_at)}
                                 </p>
                             </div>
-                            <button
-                                on:click={() => handleDownload(doc)}
-                                class="text-slate-400 hover:text-primary transition-colors"
-                                title="Download"
-                            >
-                                <span class="material-symbols-outlined"
-                                    >download</span
-                                >
-                            </button>
                         </div>
                     </article>
                 {/each}

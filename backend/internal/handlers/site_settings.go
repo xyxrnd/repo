@@ -18,6 +18,7 @@ import (
 func SiteSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodOptions {
 		middleware.EnableCORS(w)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 	middleware.EnableCORS(w)
@@ -36,6 +37,7 @@ func SiteSettingsHandler(w http.ResponseWriter, r *http.Request) {
 func SiteLogoHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodOptions {
 		middleware.EnableCORS(w)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 	middleware.EnableCORS(w)

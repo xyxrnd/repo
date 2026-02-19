@@ -61,6 +61,8 @@ func runMigrations(pool *pgxpool.Pool) {
 		`ALTER TABLE documents ADD COLUMN IF NOT EXISTS fakultas_id UUID REFERENCES fakultas(id) ON DELETE SET NULL`,
 		`ALTER TABLE documents ADD COLUMN IF NOT EXISTS prodi_id UUID REFERENCES prodi(id) ON DELETE SET NULL`,
 		`ALTER TABLE documents ADD COLUMN IF NOT EXISTS dosen_pembimbing TEXT DEFAULT ''`,
+		`ALTER TABLE documents ADD COLUMN IF NOT EXISTS dosen_pembimbing_2 TEXT DEFAULT ''`,
+		`ALTER TABLE documents ADD COLUMN IF NOT EXISTS kata_kunci TEXT DEFAULT ''`,
 		// Tabel untuk multiple files per dokumen
 		`CREATE TABLE IF NOT EXISTS document_files (
 			id UUID PRIMARY KEY,

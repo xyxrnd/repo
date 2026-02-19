@@ -8,6 +8,7 @@
     import authService from "../../services/authService";
     import { API_BASE_URL, API_ENDPOINTS } from "../../config";
 
+    // svelte-spa-router passes 'params' prop but we use the store import instead
     export let id = "";
 
     let doc = null;
@@ -717,15 +718,25 @@
                                         <div class="flex items-center gap-4">
                                             <!-- File icon -->
                                             <div
-                                                class="w-10 h-10 rounded-lg {file.is_locked
+                                                class="w-10 h-10 rounded-lg {file.is_locked &&
+                                                !unlockedFiles[file.id]
                                                     ? 'bg-amber-100 dark:bg-amber-900/30'
-                                                    : 'bg-red-100 dark:bg-red-900/30'} flex items-center justify-center flex-shrink-0"
+                                                    : file.is_locked &&
+                                                        unlockedFiles[file.id]
+                                                      ? 'bg-green-100 dark:bg-green-900/30'
+                                                      : 'bg-red-100 dark:bg-red-900/30'} flex items-center justify-center flex-shrink-0"
                                             >
-                                                {#if file.is_locked}
+                                                {#if file.is_locked && !unlockedFiles[file.id]}
                                                     <span
                                                         class="material-symbols-outlined text-amber-500"
                                                         style="font-size: 22px;"
                                                         >lock</span
+                                                    >
+                                                {:else if file.is_locked && unlockedFiles[file.id]}
+                                                    <span
+                                                        class="material-symbols-outlined text-green-500"
+                                                        style="font-size: 22px;"
+                                                        >lock_open</span
                                                     >
                                                 {:else}
                                                     <span
@@ -748,7 +759,7 @@
                                                     >
                                                         {file.file_name}
                                                     </p>
-                                                    {#if file.is_locked}
+                                                    {#if file.is_locked && !unlockedFiles[file.id]}
                                                         <span
                                                             class="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 text-[10px] font-bold rounded uppercase"
                                                         >
@@ -758,6 +769,17 @@
                                                                 >lock</span
                                                             >
                                                             Terkunci
+                                                        </span>
+                                                    {:else if file.is_locked && unlockedFiles[file.id]}
+                                                        <span
+                                                            class="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 text-[10px] font-bold rounded uppercase"
+                                                        >
+                                                            <span
+                                                                class="material-symbols-outlined"
+                                                                style="font-size: 11px;"
+                                                                >lock_open</span
+                                                            >
+                                                            Terbuka
                                                         </span>
                                                     {/if}
                                                 </div>
@@ -774,7 +796,7 @@
                                             <div
                                                 class="flex items-center gap-2 flex-shrink-0"
                                             >
-                                                {#if file.is_locked && !isFileUnlocked(file.id)}
+                                                {#if file.is_locked && !unlockedFiles[file.id]}
                                                     <!-- Tombol untuk file terkunci -->
                                                     <button
                                                         on:click={() =>
@@ -812,7 +834,7 @@
                                                             >Masukkan Token</span
                                                         >
                                                     </button>
-                                                {:else if file.is_locked && isFileUnlocked(file.id)}
+                                                {:else if file.is_locked && unlockedFiles[file.id]}
                                                     <!-- File terkunci tapi sudah di-unlock dengan token -->
                                                     <span
                                                         class="inline-flex items-center gap-1 px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 text-[10px] font-bold rounded-lg"

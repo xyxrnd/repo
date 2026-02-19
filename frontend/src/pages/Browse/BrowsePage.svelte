@@ -1,9 +1,6 @@
 <script>
     import { onMount } from "svelte";
-    import {
-        getDocuments,
-        downloadDocument,
-    } from "../../services/documentService";
+    import { getDocuments } from "../../services/documentService";
     import { querystring } from "svelte-spa-router";
 
     let documents = [];
@@ -89,10 +86,6 @@
     }
 
     $: searchQuery, selectedCategory, selectedSort, filterDocuments();
-
-    function handleDownload(doc) {
-        downloadDocument(doc.id);
-    }
 
     function formatDate(dateString) {
         const date = new Date(dateString);
@@ -342,15 +335,6 @@
                             >
                                 Lihat Detail
                             </a>
-                            <button
-                                on:click={() => handleDownload(doc)}
-                                class="flex items-center gap-1 text-slate-500 hover:text-primary transition-colors"
-                                aria-label="Download document"
-                            >
-                                <span class="material-symbols-outlined text-lg"
-                                    >download</span
-                                >
-                            </button>
                         </div>
                     </article>
                 {/each}
@@ -412,15 +396,6 @@
                             >
                                 Detail
                             </a>
-                            <button
-                                on:click={() => handleDownload(doc)}
-                                class="p-2 text-slate-500 hover:text-primary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
-                                aria-label="Download document"
-                            >
-                                <span class="material-symbols-outlined"
-                                    >download</span
-                                >
-                            </button>
                         </div>
                     </article>
                 {/each}

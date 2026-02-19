@@ -9,10 +9,23 @@ import { authService } from "./authService.js";
 
 function getAuthHeaders() {
     const token = authService.getToken();
+    if (!token) {
+        return {
+            "Content-Type": "application/json",
+        };
+    }
     return {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
     };
+}
+
+function handleAuthError(response) {
+    if (response.status === 401 || response.status === 403) {
+        authService.clearAuth();
+        window.location.hash = "/login";
+        throw new Error("Sesi Anda telah berakhir. Silakan login kembali.");
+    }
 }
 
 class FakultasService {
@@ -52,6 +65,7 @@ class FakultasService {
             body: JSON.stringify(data),
         });
         if (!response.ok) {
+            handleAuthError(response);
             const text = await response.text();
             throw new Error(text || "Gagal membuat fakultas");
         }
@@ -68,6 +82,7 @@ class FakultasService {
             body: JSON.stringify(data),
         });
         if (!response.ok) {
+            handleAuthError(response);
             const text = await response.text();
             throw new Error(text || "Gagal mengupdate fakultas");
         }
@@ -83,6 +98,7 @@ class FakultasService {
             headers: getAuthHeaders(),
         });
         if (!response.ok) {
+            handleAuthError(response);
             const text = await response.text();
             throw new Error(text || "Gagal menghapus fakultas");
         }

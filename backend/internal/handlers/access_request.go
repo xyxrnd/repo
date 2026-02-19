@@ -21,13 +21,7 @@ import (
 )
 
 // ===== SMTP Configuration =====
-// Konfigurasikan ini sesuai dengan provider email Anda
-var (
-	smtpHost     = getEnv("SMTP_HOST", "smtp.gmail.com")
-	smtpPort     = getEnv("SMTP_PORT", "587")
-	smtpEmail    = getEnv("SMTP_EMAIL", "your-email@gmail.com")
-	smtpPassword = getEnv("SMTP_PASSWORD", "your-app-password")
-)
+// Nilai dibaca saat runtime (bukan saat init) agar godotenv.Load() sudah dijalankan terlebih dahulu
 
 func getEnv(key, fallback string) string {
 	if val := os.Getenv(key); val != "" {
@@ -35,6 +29,11 @@ func getEnv(key, fallback string) string {
 	}
 	return fallback
 }
+
+func getSmtpHost() string     { return getEnv("SMTP_HOST", "smtp.gmail.com") }
+func getSmtpPort() string     { return getEnv("SMTP_PORT", "587") }
+func getSmtpEmail() string    { return getEnv("SMTP_EMAIL", "") }
+func getSmtpPassword() string { return getEnv("SMTP_PASSWORD", "") }
 
 // generateAccessToken membuat token akses acak (16 karakter hex)
 func generateAccessToken() string {
@@ -45,7 +44,19 @@ func generateAccessToken() string {
 
 // sendAccessTokenEmail mengirim email yang berisi token akses
 func sendAccessTokenEmail(toEmail, toName, token, documentTitle, fileName string) error {
-	from := smtpEmail
+	host := getSmtpHost()
+	port := getSmtpPort()
+	email := getSmtpEmail()
+	password := getSmtpPassword()
+
+	// Validasi konfigurasi
+	if email == "" || password == "" {
+		return fmt.Errorf("SMTP belum dikonfigurasi: SMTP_EMAIL=%q, SMTP_PASSWORD kosong=%v", email, password == "")
+	}
+
+	fmt.Printf("📧 Mengirim email ke %s via %s:%s dari %s\n", toEmail, host, port, email)
+
+	from := email
 	to := toEmail
 
 	subject := "Akses File Disetujui - " + documentTitle
@@ -84,9 +95,12 @@ func sendAccessTokenEmail(toEmail, toName, token, documentTitle, fileName string
 
 	msg := []byte(headers + body)
 
-	auth := smtp.PlainAuth("", smtpEmail, smtpPassword, smtpHost)
+	auth := smtp.PlainAuth("", email, password, host)
 
-	err := smtp.SendMail(smtpHost+":"+smtpPort, auth, from, []string{to}, msg)
+	err := smtp.SendMail(host+":"+port, auth, from, []string{to}, msg)
+	if err != nil {
+		fmt.Printf("❌ Gagal kirim email: %v\n", err)
+	}
 	return err
 }
 
@@ -139,11 +153,13 @@ func AccessRequestByIdHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // VerifyAccessTokenHandler memverifikasi token akses
-// POST /api/access-requests/verify-token
+// POST /api/verify-access-token
 // Body: { "file_id": "xxx", "token": "xxx" }
 func VerifyAccessTokenHandler(w http.ResponseWriter, r *http.Request) {
+
 	if r.Method == http.MethodOptions {
 		middleware.EnableCORS(w)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 	middleware.EnableCORS(w)
