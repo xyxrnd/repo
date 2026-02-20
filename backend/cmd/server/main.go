@@ -27,7 +27,10 @@ package main
 import (
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"os"
+	"strings"
 
 	"repository-un/internal/config"
 	"repository-un/internal/handlers"
@@ -114,13 +117,52 @@ func main() {
 	http.HandleFunc("/api/site-settings", handlers.SiteSettingsHandler)
 	http.HandleFunc("/api/site-settings/logo", middleware.AdminMiddleware(handlers.SiteLogoHandler))
 
+	// --- Serve Frontend Static Files ---
+	// Jika folder ../frontend/dist ada, serve SPA dari situ
+	frontendDir := "../frontend/dist"
+	if _, err := os.Stat(frontendDir); err == nil {
+		log.Println("✅ Frontend build ditemukan, serving dari", frontendDir)
+
+		fs := http.FileServer(http.Dir(frontendDir))
+		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			// Jika request ke /api/ sudah di-handle di atas, ini catch-all
+			path := r.URL.Path
+
+			// Skip API routes dan uploads (sudah di-handle)
+			if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/uploads/") || strings.HasPrefix(path, "/download/") {
+				http.NotFound(w, r)
+				return
+			}
+
+			// Coba serve file statis (css, js, gambar, dll)
+			filePath := frontendDir + path
+			if _, err := os.Stat(filePath); err == nil && path != "/" {
+				fs.ServeHTTP(w, r)
+				return
+			}
+
+			// Fallback: serve index.html untuk SPA routing
+			http.ServeFile(w, r, frontendDir+"/index.html")
+		})
+	} else {
+		log.Println("⚠️  Frontend build tidak ditemukan. Jalankan 'npm run build' di folder frontend/")
+		log.Println("   Server hanya berjalan sebagai API backend.")
+	}
+
 	// ============================================
 	// START SERVER
 	// ============================================
+	port := ":8080"
+	localIP := getLocalIP()
+
 	fmt.Println("========================================")
-	fmt.Println("  Repository UN - Backend Server")
+	fmt.Println("  Repository UN - Server")
 	fmt.Println("========================================")
-	fmt.Println("Server running at http://localhost:8080")
+	fmt.Println("")
+	fmt.Printf("  ➜  Local:   http://localhost%s\n", port)
+	if localIP != "" {
+		fmt.Printf("  ➜  Network: http://%s%s\n", localIP, port)
+	}
 	fmt.Println("")
 	fmt.Println("Endpoints:")
 	fmt.Println("  POST /api/auth/login     - Login")
@@ -133,7 +175,24 @@ func main() {
 	fmt.Println("  GET  /api/prodi          - List prodi (admin)")
 	fmt.Println("")
 
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	// Listen di 0.0.0.0 agar bisa diakses dari perangkat lain di jaringan
+	if err := http.ListenAndServe("0.0.0.0"+port, nil); err != nil {
 		log.Fatal("❌ Server gagal start: ", err)
 	}
+}
+
+// getLocalIP mendeteksi IP lokal laptop di jaringan
+func getLocalIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	for _, addr := range addrs {
+		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				return ipnet.IP.String()
+			}
+		}
+	}
+	return ""
 }

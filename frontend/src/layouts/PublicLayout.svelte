@@ -12,6 +12,7 @@
     } from "../stores/index.js";
 
     let user = null;
+    let mobileMenuOpen = false;
 
     onMount(() => {
         user = authService.getUser();
@@ -21,16 +22,24 @@
     function handleLogout() {
         authService.logout();
     }
+
+    function toggleMobileMenu() {
+        mobileMenuOpen = !mobileMenuOpen;
+    }
+
+    function closeMobileMenu() {
+        mobileMenuOpen = false;
+    }
 </script>
 
 <div class="relative flex min-h-screen w-full flex-col">
     <!-- Navbar -->
     <header
-        class="sticky top-0 z-50 flex items-center justify-between whitespace-nowrap border-b border-solid border-slate-200 dark:border-[#233648] bg-white/80 dark:bg-[#101922]/90 backdrop-blur-md px-6 py-4 lg:px-10"
+        class="sticky top-0 z-50 flex items-center justify-between whitespace-nowrap border-b border-solid border-slate-200 dark:border-[#233648] bg-white/80 dark:bg-[#101922]/90 backdrop-blur-md px-4 py-3 md:px-6 md:py-4 lg:px-10"
     >
         <a
             href="#/"
-            class="flex items-center gap-4 text-slate-900 dark:text-white cursor-pointer hover:opacity-90 transition-opacity"
+            class="flex items-center gap-3 md:gap-4 text-slate-900 dark:text-white cursor-pointer hover:opacity-90 transition-opacity"
         >
             {#if $logoFullUrl}
                 <img
@@ -45,7 +54,9 @@
                     >
                 </div>
             {/if}
-            <h2 class="text-xl font-bold leading-tight tracking-[-0.015em]">
+            <h2
+                class="text-lg md:text-xl font-bold leading-tight tracking-[-0.015em]"
+            >
                 {$appName}
             </h2>
         </a>
@@ -115,11 +126,107 @@
             </div>
         </div>
 
-        <!-- Mobile Menu Icon -->
-        <button class="lg:hidden text-slate-900 dark:text-white">
-            <span class="material-symbols-outlined">menu</span>
+        <!-- Mobile Menu Button -->
+        <button
+            class="lg:hidden p-2 text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+            on:click={toggleMobileMenu}
+            aria-label="Toggle menu"
+        >
+            <span class="material-symbols-outlined"
+                >{mobileMenuOpen ? "close" : "menu"}</span
+            >
         </button>
     </header>
+
+    <!-- Mobile Menu Panel -->
+    {#if mobileMenuOpen}
+        <div
+            class="lg:hidden fixed inset-x-0 top-[57px] z-40 bg-white dark:bg-[#101922] border-b border-slate-200 dark:border-[#233648] shadow-xl animate-slideDown"
+        >
+            <nav class="flex flex-col p-4 gap-1">
+                <a
+                    class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium transition-colors"
+                    href="#/"
+                    on:click={closeMobileMenu}
+                >
+                    <span class="material-symbols-outlined text-xl">home</span>
+                    Home
+                </a>
+                <a
+                    class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium transition-colors"
+                    href="#/browse"
+                    on:click={closeMobileMenu}
+                >
+                    <span class="material-symbols-outlined text-xl"
+                        >explore</span
+                    >
+                    Browse
+                </a>
+                <a
+                    class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium transition-colors"
+                    href="#/about"
+                    on:click={closeMobileMenu}
+                >
+                    <span class="material-symbols-outlined text-xl">info</span>
+                    About
+                </a>
+
+                <hr class="border-slate-200 dark:border-slate-700 my-2" />
+
+                {#if user}
+                    <a
+                        class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium transition-colors"
+                        href="#/admin"
+                        on:click={closeMobileMenu}
+                    >
+                        <span class="material-symbols-outlined text-xl"
+                            >dashboard</span
+                        >
+                        Dashboard
+                    </a>
+                    <div class="flex items-center gap-3 px-4 py-3">
+                        <div
+                            class="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-blue-600 flex items-center justify-center text-white font-bold text-sm"
+                        >
+                            {user.name?.charAt(0).toUpperCase() || "U"}
+                        </div>
+                        <span
+                            class="text-sm font-medium text-slate-700 dark:text-slate-300 flex-1"
+                            >{user.name}</span
+                        >
+                        <button
+                            on:click={() => {
+                                handleLogout();
+                                closeMobileMenu();
+                            }}
+                            class="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                        >
+                            <span class="material-symbols-outlined text-xl"
+                                >logout</span
+                            >
+                        </button>
+                    </div>
+                {:else}
+                    <div class="flex gap-3 px-4 py-3">
+                        <a
+                            href="#/login"
+                            on:click={closeMobileMenu}
+                            class="flex-1 flex items-center justify-center py-2.5 bg-slate-200 dark:bg-[#233648] hover:bg-slate-300 dark:hover:bg-[#2f455a] text-slate-900 dark:text-white text-sm font-bold rounded-lg transition-all"
+                        >
+                            Login
+                        </a>
+                        <a
+                            href="#/register"
+                            on:click={closeMobileMenu}
+                            class="flex-1 flex items-center justify-center py-2.5 bg-primary hover:bg-primary/90 text-white text-sm font-bold rounded-lg transition-all shadow-lg shadow-primary/25"
+                        >
+                            Sign Up
+                        </a>
+                    </div>
+                {/if}
+            </nav>
+        </div>
+    {/if}
 
     <main class="flex-1">
         <slot />
@@ -313,5 +420,18 @@
     .size-6 {
         width: 1.5rem;
         height: 1.5rem;
+    }
+    @keyframes slideDown {
+        from {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    :global(.animate-slideDown) {
+        animation: slideDown 0.2s ease-out;
     }
 </style>

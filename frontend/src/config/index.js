@@ -6,9 +6,17 @@
  */
 
 // URL API Backend
-// Untuk development: http://localhost:8080
-// Untuk production: ganti dengan URL server production
-export const API_BASE_URL = "http://localhost:8080";
+// Development: Vite proxy atau localhost
+// Production: auto-detect dari origin browser (saat di-serve dari Go backend)
+function getApiBaseUrl() {
+    // Jika di-serve dari Go backend (production), gunakan origin yang sama
+    if (typeof window !== "undefined" && !window.location.port.startsWith("517")) {
+        return window.location.origin;
+    }
+    // Development (Vite dev server)
+    return "http://localhost:8080";
+}
+export const API_BASE_URL = getApiBaseUrl();
 
 // API Endpoints
 export const API_ENDPOINTS = {
