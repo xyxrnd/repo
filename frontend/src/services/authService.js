@@ -60,6 +60,15 @@ class AuthService {
     }
 
     /**
+     * Cek apakah user adalah mahasiswa
+     * @returns {boolean}
+     */
+    isMahasiswa() {
+        const user = this.getUser();
+        return user && user.role === "mahasiswa";
+    }
+
+    /**
      * Simpan token dan user ke localStorage
      * @param {string} token - JWT token
      * @param {Object} user - User object

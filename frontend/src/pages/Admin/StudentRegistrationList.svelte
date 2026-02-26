@@ -3,11 +3,11 @@
     import authService from "../../services/authService";
     import { API_ENDPOINTS, API_BASE_URL } from "../../config";
 
-    let requests = [];
+    let registrations = [];
     let loading = true;
     let error = "";
-    let actionLoading = null; // ID yang sedang diproses
-    let previewKtm = null; // KTM yang sedang dilihat
+    let actionLoading = null;
+    let previewKtm = null;
     let deleteConfirm = null;
     let filterStatus = "all";
 
@@ -37,18 +37,18 @@
     const token = authService.getToken();
 
     onMount(async () => {
-        await loadRequests();
+        await loadRegistrations();
     });
 
-    async function loadRequests() {
+    async function loadRegistrations() {
         loading = true;
         error = "";
         try {
-            const response = await fetch(API_ENDPOINTS.ACCESS_REQUESTS, {
+            const response = await fetch(API_ENDPOINTS.STUDENT_REGISTRATIONS, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             if (!response.ok) throw new Error("Gagal mengambil data");
-            requests = await response.json();
+            registrations = await response.json();
         } catch (err) {
             error = err.message;
         } finally {
@@ -56,11 +56,18 @@
         }
     }
 
-    async function handleApprove(req) {
-        actionLoading = req.id;
+    async function handleApprove(reg) {
+        if (
+            !confirm(
+                `Setujui pendaftaran ${reg.name}?\n\nAkun mahasiswa akan dibuat dan email notifikasi akan dikirim ke ${reg.email}.`,
+            )
+        )
+            return;
+
+        actionLoading = reg.id;
         try {
             const response = await fetch(
-                API_ENDPOINTS.ACCESS_REQUEST_BY_ID(req.id),
+                API_ENDPOINTS.STUDENT_REGISTRATION_BY_ID(reg.id),
                 {
                     method: "PUT",
                     headers: {
@@ -71,14 +78,17 @@
                 },
             );
 
-            if (!response.ok) throw new Error("Gagal menyetujui permintaan");
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.error || "Gagal menyetujui pendaftaran");
+            }
 
             const data = await response.json();
             alert(
                 data.message ||
-                    "Permintaan disetujui & token dikirim ke email.",
+                    "Pendaftaran disetujui & akun mahasiswa telah dibuat.",
             );
-            await loadRequests();
+            await loadRegistrations();
         } catch (err) {
             alert("Error: " + err.message);
         } finally {
@@ -86,13 +96,18 @@
         }
     }
 
-    async function handleReject(req) {
-        if (!confirm(`Tolak permintaan dari ${req.nama}?`)) return;
+    async function handleReject(reg) {
+        if (
+            !confirm(
+                `Tolak pendaftaran dari ${reg.name}?\n\nEmail penolakan akan dikirim ke ${reg.email}.`,
+            )
+        )
+            return;
 
-        actionLoading = req.id;
+        actionLoading = reg.id;
         try {
             const response = await fetch(
-                API_ENDPOINTS.ACCESS_REQUEST_BY_ID(req.id),
+                API_ENDPOINTS.STUDENT_REGISTRATION_BY_ID(reg.id),
                 {
                     method: "PUT",
                     headers: {
@@ -103,8 +118,8 @@
                 },
             );
 
-            if (!response.ok) throw new Error("Gagal menolak permintaan");
-            await loadRequests();
+            if (!response.ok) throw new Error("Gagal menolak pendaftaran");
+            await loadRegistrations();
         } catch (err) {
             alert("Error: " + err.message);
         } finally {
@@ -112,8 +127,8 @@
         }
     }
 
-    async function handleDelete(req) {
-        deleteConfirm = req;
+    async function handleDelete(reg) {
+        deleteConfirm = reg;
     }
 
     async function confirmDelete() {
@@ -121,7 +136,7 @@
         actionLoading = deleteConfirm.id;
         try {
             const response = await fetch(
-                API_ENDPOINTS.ACCESS_REQUEST_BY_ID(deleteConfirm.id),
+                API_ENDPOINTS.STUDENT_REGISTRATION_BY_ID(deleteConfirm.id),
                 {
                     method: "DELETE",
                     headers: { Authorization: `Bearer ${token}` },
@@ -129,7 +144,7 @@
             );
             if (!response.ok) throw new Error("Gagal menghapus");
             deleteConfirm = null;
-            await loadRequests();
+            await loadRegistrations();
         } catch (err) {
             alert("Error: " + err.message);
         } finally {
@@ -180,14 +195,30 @@
         }
     }
 
-    $: filteredRequests =
-        filterStatus === "all"
-            ? requests
-            : requests.filter((r) => r.status === filterStatus);
+    function getInitials(name) {
+        if (!name) return "?";
+        return name
+            .split(" ")
+            .map((n) => n[0])
+            .join("")
+            .substring(0, 2)
+            .toUpperCase();
+    }
 
-    $: pendingCount = requests.filter((r) => r.status === "pending").length;
-    $: approvedCount = requests.filter((r) => r.status === "approved").length;
-    $: rejectedCount = requests.filter((r) => r.status === "rejected").length;
+    $: filteredRegistrations =
+        filterStatus === "all"
+            ? registrations
+            : registrations.filter((r) => r.status === filterStatus);
+
+    $: pendingCount = registrations.filter(
+        (r) => r.status === "pending",
+    ).length;
+    $: approvedCount = registrations.filter(
+        (r) => r.status === "approved",
+    ).length;
+    $: rejectedCount = registrations.filter(
+        (r) => r.status === "rejected",
+    ).length;
 </script>
 
 <div class="space-y-6">
@@ -196,15 +227,20 @@
         class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
     >
         <div>
-            <h1 class="text-2xl font-bold text-slate-900 dark:text-white">
-                Permintaan Akses
+            <h1
+                class="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2"
+            >
+                <span class="material-symbols-outlined text-emerald-500"
+                    >school</span
+                >
+                Pendaftaran Mahasiswa
             </h1>
             <p class="text-slate-500 dark:text-slate-400 mt-1">
-                Kelola permintaan akses file terkunci dari pengunjung
+                Verifikasi dan kelola pendaftaran akun mahasiswa
             </p>
         </div>
         <button
-            on:click={loadRequests}
+            on:click={loadRegistrations}
             class="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 font-medium rounded-lg transition-all"
         >
             <span class="material-symbols-outlined text-xl">refresh</span>
@@ -237,7 +273,7 @@
                         {pendingCount}
                     </p>
                     <p class="text-xs text-slate-500 dark:text-slate-400">
-                        Menunggu
+                        Menunggu Verifikasi
                     </p>
                 </div>
             </div>
@@ -301,7 +337,7 @@
     </div>
 
     <!-- Filter bar -->
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-2 flex-wrap">
         <button
             on:click={() => (filterStatus = "all")}
             class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-all {filterStatus ===
@@ -309,7 +345,7 @@
                 ? 'bg-primary text-white'
                 : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200'}"
         >
-            Semua ({requests.length})
+            Semua ({registrations.length})
         </button>
         <button
             on:click={() => (filterStatus = "pending")}
@@ -378,14 +414,14 @@
                     Loading...
                 </div>
             </div>
-        {:else if filteredRequests.length === 0}
+        {:else if filteredRegistrations.length === 0}
             <div class="p-12 text-center">
                 <span
                     class="material-symbols-outlined text-6xl text-slate-300 dark:text-slate-600"
-                    >inbox</span
+                    >school</span
                 >
                 <p class="mt-4 text-slate-500 dark:text-slate-400">
-                    Tidak ada permintaan akses
+                    Tidak ada pendaftaran mahasiswa
                     {filterStatus !== "all"
                         ? `dengan status "${filterStatus}"`
                         : ""}
@@ -398,11 +434,11 @@
                         <tr>
                             <th
                                 class="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider"
-                                >Pemohon</th
+                                >Mahasiswa</th
                             >
                             <th
                                 class="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider"
-                                >Dokumen</th
+                                >Email</th
                             >
                             <th
                                 class="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider"
@@ -425,43 +461,42 @@
                     <tbody
                         class="divide-y divide-slate-100 dark:divide-slate-700"
                     >
-                        {#each filteredRequests as req}
-                            {@const statusStyle = getStatusStyle(req.status)}
+                        {#each filteredRegistrations as reg}
+                            {@const statusStyle = getStatusStyle(reg.status)}
                             <tr
                                 class="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors"
                             >
-                                <!-- Pemohon -->
+                                <!-- Mahasiswa -->
                                 <td class="px-6 py-4">
-                                    <div>
+                                    <div class="flex items-center gap-3">
+                                        <div
+                                            class="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+                                        >
+                                            {getInitials(reg.name)}
+                                        </div>
                                         <p
                                             class="font-semibold text-slate-900 dark:text-white text-sm"
                                         >
-                                            {req.nama}
-                                        </p>
-                                        <p
-                                            class="text-xs text-slate-500 dark:text-slate-400 mt-0.5"
-                                        >
-                                            {req.email}
+                                            {reg.name}
                                         </p>
                                     </div>
                                 </td>
 
-                                <!-- Dokumen -->
+                                <!-- Email -->
                                 <td class="px-6 py-4">
                                     <p
-                                        class="text-sm text-slate-900 dark:text-white font-medium truncate max-w-[250px]"
-                                        title={req.doc_judul}
+                                        class="text-sm text-slate-600 dark:text-slate-300"
                                     >
-                                        {req.doc_judul || "-"}
+                                        {reg.email}
                                     </p>
                                 </td>
 
                                 <!-- KTM -->
                                 <td class="px-6 py-4">
-                                    {#if req.ktm_path}
+                                    {#if reg.ktm_path}
                                         <button
                                             on:click={() =>
-                                                (previewKtm = req.ktm_path)}
+                                                (previewKtm = reg.ktm_path)}
                                             class="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-xs font-medium rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
                                         >
                                             <span
@@ -491,20 +526,13 @@
                                         >
                                         {statusStyle.label}
                                     </span>
-                                    {#if req.status === "approved" && req.access_token}
-                                        <p
-                                            class="text-[10px] text-green-600 dark:text-green-400 mt-1 font-mono"
-                                        >
-                                            Token: {req.access_token}
-                                        </p>
-                                    {/if}
                                 </td>
 
                                 <!-- Tanggal -->
                                 <td
                                     class="px-6 py-4 text-sm text-slate-500 dark:text-slate-400 whitespace-nowrap"
                                 >
-                                    {formatDate(req.created_at)}
+                                    {formatDate(reg.created_at)}
                                 </td>
 
                                 <!-- Aksi -->
@@ -512,16 +540,16 @@
                                     <div
                                         class="flex items-center justify-end gap-1"
                                     >
-                                        {#if req.status === "pending"}
+                                        {#if reg.status === "pending"}
                                             <button
                                                 on:click={() =>
-                                                    handleApprove(req)}
+                                                    handleApprove(reg)}
                                                 disabled={actionLoading ===
-                                                    req.id}
+                                                    reg.id}
                                                 class="inline-flex items-center gap-1 px-3 py-1.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/50 rounded-lg text-xs font-semibold transition-all disabled:opacity-50"
-                                                title="Setujui & kirim token via email"
+                                                title="Setujui & buat akun mahasiswa"
                                             >
-                                                {#if actionLoading === req.id}
+                                                {#if actionLoading === reg.id}
                                                     <span
                                                         class="material-symbols-outlined animate-spin"
                                                         style="font-size: 14px;"
@@ -538,11 +566,11 @@
                                             </button>
                                             <button
                                                 on:click={() =>
-                                                    handleReject(req)}
+                                                    handleReject(reg)}
                                                 disabled={actionLoading ===
-                                                    req.id}
+                                                    reg.id}
                                                 class="inline-flex items-center gap-1 px-3 py-1.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 rounded-lg text-xs font-semibold transition-all disabled:opacity-50"
-                                                title="Tolak permintaan"
+                                                title="Tolak pendaftaran"
                                             >
                                                 <span
                                                     class="material-symbols-outlined"
@@ -553,7 +581,7 @@
                                             </button>
                                         {/if}
                                         <button
-                                            on:click={() => handleDelete(req)}
+                                            on:click={() => handleDelete(reg)}
                                             class="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
                                             title="Hapus"
                                         >
@@ -576,12 +604,11 @@
 
 <!-- KTM Preview Modal -->
 {#if previewKtm}
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div
         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
         on:click|self={() => (previewKtm = null)}
-        on:keydown={(e) => e.key === "Escape" && (previewKtm = null)}
-        role="button"
-        tabindex="0"
     >
         <div
             class="bg-white dark:bg-[#192633] border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
@@ -592,7 +619,7 @@
                 <h3
                     class="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2"
                 >
-                    <span class="material-symbols-outlined text-primary"
+                    <span class="material-symbols-outlined text-emerald-500"
                         >badge</span
                     >
                     Preview KTM
@@ -663,12 +690,12 @@
                 <h3
                     class="text-xl font-bold text-slate-900 dark:text-white mb-2"
                 >
-                    Hapus Permintaan?
+                    Hapus Pendaftaran?
                 </h3>
                 <p class="text-slate-500 dark:text-slate-400 mb-6 text-sm">
-                    Hapus permintaan akses dari <strong
+                    Hapus pendaftaran dari <strong
                         class="text-slate-900 dark:text-white"
-                        >{deleteConfirm.nama}</strong
+                        >{deleteConfirm.name}</strong
                     >? Tindakan ini tidak dapat dibatalkan.
                 </p>
                 <div class="flex gap-3">

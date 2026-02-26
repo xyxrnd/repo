@@ -111,6 +111,36 @@ func runMigrations(pool *pgxpool.Pool) {
 		// Tambah kolom access_token untuk menyimpan token akses yang dikirim via email
 		`ALTER TABLE access_requests ADD COLUMN IF NOT EXISTS access_token VARCHAR(100) DEFAULT ''`,
 		`CREATE INDEX IF NOT EXISTS idx_access_requests_token ON access_requests(access_token)`,
+		// Migrasi: ubah file_id menjadi nullable (sistem token sekarang per-dokumen, bukan per-file)
+		`ALTER TABLE access_requests ALTER COLUMN file_id DROP NOT NULL`,
+		// Tabel student_registrations untuk pendaftaran mahasiswa
+		`CREATE TABLE IF NOT EXISTS student_registrations (
+			id UUID PRIMARY KEY,
+			name VARCHAR(255) NOT NULL,
+			email VARCHAR(255) NOT NULL,
+			password VARCHAR(255) NOT NULL,
+			ktm_path VARCHAR(500) DEFAULT '',
+			status VARCHAR(50) DEFAULT 'pending',
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_student_registrations_email ON student_registrations(email)`,
+		`CREATE INDEX IF NOT EXISTS idx_student_registrations_status ON student_registrations(status)`,
+		// Update role constraint di users untuk mendukung role 'mahasiswa'
+		`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`,
+		`ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin', 'user', 'mahasiswa'))`,
+		// Tabel email_otps untuk verifikasi email sebelum submit access request
+		`CREATE TABLE IF NOT EXISTS email_otps (
+			id UUID PRIMARY KEY,
+			email VARCHAR(255) NOT NULL,
+			otp_code VARCHAR(10) NOT NULL,
+			document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+			is_verified BOOLEAN DEFAULT FALSE,
+			expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_email_otps_email ON email_otps(email)`,
+		`CREATE INDEX IF NOT EXISTS idx_email_otps_expires ON email_otps(expires_at)`,
 	}
 
 	for _, q := range queries {

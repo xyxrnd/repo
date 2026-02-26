@@ -131,8 +131,8 @@ func createUser(w http.ResponseWriter, r *http.Request) {
 		req.Role = "user"
 	}
 
-	if req.Role != "admin" && req.Role != "user" {
-		http.Error(w, `{"error":"Role must be 'admin' or 'user'"}`, http.StatusBadRequest)
+	if req.Role != "admin" && req.Role != "user" && req.Role != "mahasiswa" {
+		http.Error(w, `{"error":"Role must be 'admin', 'user', or 'mahasiswa'"}`, http.StatusBadRequest)
 		return
 	}
 
@@ -194,8 +194,8 @@ func updateUser(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 
-	if req.Role != "" && req.Role != "admin" && req.Role != "user" {
-		http.Error(w, `{"error":"Role must be 'admin' or 'user'"}`, http.StatusBadRequest)
+	if req.Role != "" && req.Role != "admin" && req.Role != "user" && req.Role != "mahasiswa" {
+		http.Error(w, `{"error":"Role must be 'admin', 'user', or 'mahasiswa'"}`, http.StatusBadRequest)
 		return
 	}
 

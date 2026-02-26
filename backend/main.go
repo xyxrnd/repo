@@ -55,6 +55,11 @@ func main() {
 	http.HandleFunc("/api/site-settings", handlers.SiteSettingsHandler)
 	http.HandleFunc("/api/site-settings/logo", middleware.AdminMiddleware(handlers.SiteLogoHandler))
 
+	// --- Student Registration Routes ---
+	http.HandleFunc("/api/student-signup", handlers.StudentSignupHandler) // Public
+	http.HandleFunc("/api/student-registrations", middleware.AdminMiddleware(handlers.StudentRegistrationsHandler))
+	http.HandleFunc("/api/student-registrations/", middleware.AdminMiddleware(handlers.StudentRegistrationByIdHandler))
+
 	fmt.Println("========================================")
 	fmt.Println("  Repository UN - Backend Server")
 	fmt.Println("========================================")

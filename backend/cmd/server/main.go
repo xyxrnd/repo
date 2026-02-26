@@ -69,6 +69,11 @@ func main() {
 	// --- Verify Access Token (Public) ---
 	http.HandleFunc("/api/verify-access-token", handlers.VerifyAccessTokenHandler)
 
+	// --- Email OTP Verification (Public) ---
+	// Verifikasi email via OTP sebelum submit access request
+	http.HandleFunc("/api/send-otp", handlers.SendOTPHandler)
+	http.HandleFunc("/api/verify-otp", handlers.VerifyOTPHandler)
+
 	// --- User Routes (Admin Only) ---
 	// Hanya admin yang bisa mengelola user
 	http.HandleFunc("/api/users", middleware.AdminMiddleware(handlers.UsersHandler))
@@ -116,6 +121,13 @@ func main() {
 	// PUT: Admin only (untuk update settings)
 	http.HandleFunc("/api/site-settings", handlers.SiteSettingsHandler)
 	http.HandleFunc("/api/site-settings/logo", middleware.AdminMiddleware(handlers.SiteLogoHandler))
+
+	// --- Student Registration Routes ---
+	// POST: Public (mahasiswa bisa mendaftar tanpa login)
+	// GET/PUT/DELETE: Admin only (mengelola pendaftaran)
+	http.HandleFunc("/api/student-signup", handlers.StudentSignupHandler)
+	http.HandleFunc("/api/student-registrations", middleware.AdminMiddleware(handlers.StudentRegistrationsHandler))
+	http.HandleFunc("/api/student-registrations/", middleware.AdminMiddleware(handlers.StudentRegistrationByIdHandler))
 
 	// --- Serve Frontend Static Files ---
 	// Jika folder ../frontend/dist ada, serve SPA dari situ

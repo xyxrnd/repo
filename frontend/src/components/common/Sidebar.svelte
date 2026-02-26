@@ -126,6 +126,18 @@
                     <span class="material-symbols-outlined text-xl">key</span>
                     <span class="text-sm font-medium">Permintaan Akses</span>
                 </a>
+                <a
+                    href="#/student-registrations"
+                    use:link
+                    on:click={handleNavClick}
+                    class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                    <span class="material-symbols-outlined text-xl">school</span
+                    >
+                    <span class="text-sm font-medium"
+                        >Pendaftaran Mahasiswa</span
+                    >
+                </a>
             {/if}
             <a
                 href="#/reports"

@@ -22,9 +22,14 @@
             await authService.login(email, password);
             // Check if there's a redirect destination stored
             const redirectTo = sessionStorage.getItem("redirectAfterLogin");
-            if (redirectTo) {
+            if (redirectTo && !authService.isMahasiswa()) {
+                // Only redirect to stored destination if user is admin
                 sessionStorage.removeItem("redirectAfterLogin");
                 window.location.hash = redirectTo.replace("#", "");
+            } else if (authService.isMahasiswa()) {
+                // Mahasiswa diarahkan ke halaman utama (landing page)
+                sessionStorage.removeItem("redirectAfterLogin");
+                window.location.hash = "/";
             } else {
                 // Default redirect to admin panel
                 window.location.hash = "/admin";
@@ -212,6 +217,17 @@
                 <a
                     href="#/register"
                     class="text-primary font-medium hover:underline">Sign up</a
+                >
+            </p>
+            <!-- Student Signup Link -->
+            <p
+                class="text-center text-slate-500 dark:text-slate-400 mt-2 text-sm"
+            >
+                Mahasiswa?
+                <a
+                    href="#/student-signup"
+                    class="text-emerald-500 font-semibold hover:underline"
+                    >Daftar di sini</a
                 >
             </p>
         </div>

@@ -20,10 +20,12 @@
   import ProdiList from "./pages/Prodi/ProdiList.svelte";
   import SystemSettings from "./pages/Admin/SystemSettings.svelte";
   import AccessRequestList from "./pages/Admin/AccessRequestList.svelte";
+  import StudentRegistrationList from "./pages/Admin/StudentRegistrationList.svelte";
 
   // Auth Pages
   import LoginPage from "./pages/Auth/LoginPage.svelte";
   import RegisterPage from "./pages/Auth/RegisterPage.svelte";
+  import StudentSignupPage from "./pages/Auth/StudentSignupPage.svelte";
 
   // Public Pages
   import LandingPage from "./pages/Landing/LandingPage.svelte";
@@ -36,7 +38,7 @@
   let currentRoute = "/";
 
   // Auth routes (no layout wrapper, they have their own full-page layout)
-  const authRoutes = ["/login", "/register"];
+  const authRoutes = ["/login", "/register", "/student-signup"];
 
   // Public routes that use PublicLayout
   const publicRoutes = ["/", "/landing", "/browse", "/about", "/document"];
@@ -60,11 +62,34 @@
     return true;
   }
 
-  // Wrapper for protected routes
+  // Admin guard function - checks both auth and admin role
+  function requireAdmin() {
+    if (!authService.isAuthenticated()) {
+      sessionStorage.setItem("redirectAfterLogin", window.location.hash);
+      push("/login");
+      return false;
+    }
+    if (!authService.isAdmin()) {
+      // Mahasiswa or non-admin users are redirected to home
+      push("/");
+      return false;
+    }
+    return true;
+  }
+
+  // Wrapper for protected routes (any authenticated user)
   function protectedRoute(component) {
     return wrap({
       component,
       conditions: [requireAuth],
+    });
+  }
+
+  // Wrapper for admin-only routes
+  function adminRoute(component) {
+    return wrap({
+      component,
+      conditions: [requireAdmin],
     });
   }
 
@@ -80,29 +105,32 @@
     // Auth routes
     "/login": LoginPage,
     "/register": RegisterPage,
+    "/student-signup": StudentSignupPage,
 
-    // Admin routes (protected)
-    "/admin": protectedRoute(Dashboard),
-    "/admin/dashboard": protectedRoute(Dashboard),
-    "/admin/documents": protectedRoute(DocumentList),
-    "/admin/documents/add": protectedRoute(DocumentAdd),
-    "/admin/documents/edit/:id": protectedRoute(DocumentEdit),
-    "/admin/users": protectedRoute(UserList),
-    "/admin/fakultas": protectedRoute(FakultasList),
-    "/admin/prodi": protectedRoute(ProdiList),
-    "/dashboard": protectedRoute(Dashboard),
-    "/documents": protectedRoute(DocumentList),
-    "/documents/add": protectedRoute(DocumentAdd),
-    "/documents/edit/:id": protectedRoute(DocumentEdit),
-    "/users": protectedRoute(UserList),
-    "/fakultas": protectedRoute(FakultasList),
-    "/prodi": protectedRoute(ProdiList),
-    "/reports": protectedRoute(Reports),
-    "/settings": protectedRoute(Settings),
-    "/system-settings": protectedRoute(SystemSettings),
-    "/admin/system-settings": protectedRoute(SystemSettings),
-    "/access-requests": protectedRoute(AccessRequestList),
-    "/admin/access-requests": protectedRoute(AccessRequestList),
+    // Admin routes (admin only - mahasiswa cannot access)
+    "/admin": adminRoute(Dashboard),
+    "/admin/dashboard": adminRoute(Dashboard),
+    "/admin/documents": adminRoute(DocumentList),
+    "/admin/documents/add": adminRoute(DocumentAdd),
+    "/admin/documents/edit/:id": adminRoute(DocumentEdit),
+    "/admin/users": adminRoute(UserList),
+    "/admin/fakultas": adminRoute(FakultasList),
+    "/admin/prodi": adminRoute(ProdiList),
+    "/dashboard": adminRoute(Dashboard),
+    "/documents": adminRoute(DocumentList),
+    "/documents/add": adminRoute(DocumentAdd),
+    "/documents/edit/:id": adminRoute(DocumentEdit),
+    "/users": adminRoute(UserList),
+    "/fakultas": adminRoute(FakultasList),
+    "/prodi": adminRoute(ProdiList),
+    "/reports": adminRoute(Reports),
+    "/settings": adminRoute(Settings),
+    "/system-settings": adminRoute(SystemSettings),
+    "/admin/system-settings": adminRoute(SystemSettings),
+    "/access-requests": adminRoute(AccessRequestList),
+    "/admin/access-requests": adminRoute(AccessRequestList),
+    "/student-registrations": adminRoute(StudentRegistrationList),
+    "/admin/student-registrations": adminRoute(StudentRegistrationList),
 
     // Catch-all
     "*": NotFound,

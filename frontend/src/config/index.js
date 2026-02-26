@@ -52,6 +52,15 @@ export const API_ENDPOINTS = {
     ACCESS_REQUESTS: `${API_BASE_URL}/api/access-requests`,
     ACCESS_REQUEST_BY_ID: (id) => `${API_BASE_URL}/api/access-requests/${id}`,
     VERIFY_ACCESS_TOKEN: `${API_BASE_URL}/api/verify-access-token`,
+
+    // Email OTP Verification
+    SEND_OTP: `${API_BASE_URL}/api/send-otp`,
+    VERIFY_OTP: `${API_BASE_URL}/api/verify-otp`,
+
+    // Student Registration
+    STUDENT_SIGNUP: `${API_BASE_URL}/api/student-signup`,
+    STUDENT_REGISTRATIONS: `${API_BASE_URL}/api/student-registrations`,
+    STUDENT_REGISTRATION_BY_ID: (id) => `${API_BASE_URL}/api/student-registrations/${id}`,
 };
 
 // App Configuration
