@@ -24,3 +24,11 @@ uploads/
 # Node modules (frontend)
 node_modules/
 dist/
+
+# Credentials & secrets
+backend/ga-credentials.json
+backend/w-unsub-82fabe19ad9b.json
+*.credentials.json
+
+# Database dumps
+*.dump
