@@ -1,14 +1,12 @@
 <script>
     import { onMount } from "svelte";
-    import { params, querystring } from "svelte-spa-router";
-    import {
-        getDocumentById,
-        downloadDocument,
-    } from "../../services/documentService";
+    import { querystring } from "svelte-spa-router";
+    import { getDocumentById } from "../../services/documentService";
     import authService from "../../services/authService";
     import { API_BASE_URL, API_ENDPOINTS } from "../../config";
 
     export let id = "";
+    export let params = {};
 
     let doc = null;
     let loading = true;
@@ -40,9 +38,9 @@
     let tokenAutoVerified = false;
     let unlockedFiles = {}; // { file_id: { file_path, file_name } }
 
-    // Get ID from route params
-    $: if ($params && $params.id) {
-        id = $params.id;
+    // Get ID from route params (prop passed by svelte-spa-router)
+    $: if (params && params.id) {
+        id = params.id;
         loadDocument();
     }
 
@@ -59,7 +57,6 @@
     onMount(() => {
         isLoggedIn = authService.isAuthenticated();
         isMahasiswa = authService.isMahasiswa();
-        if (id) loadDocument();
     });
 
     async function loadDocument() {
@@ -76,37 +73,70 @@
     }
 
     function handleDownload() {
-        downloadDocument(doc.id);
+        // Download semua file dalam ZIP via endpoint download-all
+        window.open(API_ENDPOINTS.DOCUMENT_DOWNLOAD_ALL(doc.id), "_blank");
     }
 
     function handleFileDownload(file) {
-        if (file.is_locked && !isMahasiswa && !unlockedFiles[file.id]) {
-            showAccessForm = true;
+        if (file.is_locked && !unlockedFiles[file.id]) {
+            if (!isLoggedIn) {
+                window.location.hash = "/student-signup";
+            } else {
+                showAccessForm = true;
+            }
             return;
         }
         window.open(`${API_BASE_URL}/${file.file_path}`, "_blank");
     }
 
     function handleFilePreview(file) {
-        if (file.is_locked && !isMahasiswa && !unlockedFiles[file.id]) {
-            showAccessForm = true;
+        if (file.is_locked && !unlockedFiles[file.id]) {
+            if (!isLoggedIn) {
+                window.location.hash = "/student-signup";
+            } else {
+                showAccessForm = true;
+            }
             return;
         }
         window.open(`${API_BASE_URL}/${file.file_path}`, "_blank");
     }
 
+    // Variabel untuk menyimpan email tersensor sebagai placeholder hint untuk mahasiswa
+    let maskedEmail = "";
+
+    // Helper: sensor bagian tengah email (mis: rendhi@gmail.com → r****i@gmail.com)
+    function maskEmail(email) {
+        if (!email) return "";
+        const [local, domain] = email.split("@");
+        if (!domain) return email;
+        if (local.length <= 2) return local[0] + "***@" + domain;
+        const first = local[0];
+        const last = local[local.length - 1];
+        const stars = "*".repeat(Math.min(local.length - 2, 5));
+        return `${first}${stars}${last}@${domain}`;
+    }
+
     function openAccessForm() {
         showAccessForm = true;
-        accessFormData = { nama: "", email: "", ktm: null };
         accessFormSuccess = "";
         accessFormError = "";
-        otpStep = 1;
-        otpEmail = "";
         otpCode = "";
         otpError = "";
         otpSuccess = "";
         otpCountdown = 0;
         if (otpTimer) clearInterval(otpTimer);
+
+        otpStep = 1;
+        otpEmail = "";
+        accessFormData = { nama: "", email: "", ktm: null };
+
+        // Jika mahasiswa, siapkan placeholder email tersensor
+        if (isMahasiswa) {
+            const currentUser = authService.getUser();
+            maskedEmail = maskEmail(currentUser?.email || "");
+        } else {
+            maskedEmail = "";
+        }
     }
 
     function closeAccessForm() {
@@ -120,6 +150,7 @@
         otpError = "";
         otpSuccess = "";
         otpCountdown = 0;
+        maskedEmail = "";
         if (otpTimer) clearInterval(otpTimer);
     }
 
@@ -140,6 +171,20 @@
         if (!emailRegex.test(otpEmail.trim())) {
             otpError = "Format email tidak valid.";
             return;
+        }
+
+        // Validasi: jika mahasiswa, email harus sesuai dengan email akun
+        if (isMahasiswa) {
+            const currentUser = authService.getUser();
+            if (
+                currentUser &&
+                otpEmail.trim().toLowerCase() !==
+                    currentUser.email.toLowerCase()
+            ) {
+                otpError =
+                    "Email tidak sesuai dengan akun Anda. Gunakan email yang terdaftar.";
+                return;
+            }
         }
 
         otpLoading = true;
@@ -213,6 +258,11 @@
             otpSuccess =
                 "Email berhasil diverifikasi! Silakan lengkapi formulir di bawah.";
             accessFormData.email = otpEmail.trim();
+            // Jika mahasiswa, auto-fill nama dari akun
+            if (isMahasiswa) {
+                const currentUser = authService.getUser();
+                if (currentUser?.name) accessFormData.nama = currentUser.name;
+            }
             if (otpTimer) clearInterval(otpTimer);
         } catch (e) {
             otpError = e.message || "Kode OTP tidak valid.";
@@ -306,8 +356,15 @@
             if (accessFormData.ktm) {
                 formData.append("ktm", accessFormData.ktm);
             }
+            /** @type {Record<string, string>} */
+            const headers = {};
+            if (isMahasiswa) {
+                const token = authService.getToken();
+                if (token) headers["Authorization"] = `Bearer ${token}`;
+            }
             const response = await fetch(API_ENDPOINTS.ACCESS_REQUESTS, {
                 method: "POST",
+                headers,
                 body: formData,
             });
             if (response.status === 409) {
@@ -672,12 +729,57 @@
                                         >
                                             <td
                                                 class="py-3 pr-4 text-sm font-semibold text-slate-500 dark:text-slate-400 w-40 align-top"
-                                                >Dosen Pembimbing</td
+                                                >Dosen Pembimbing 1</td
                                             >
                                             <td
                                                 class="py-3 text-sm text-slate-900 dark:text-white"
                                                 >{doc.dosen_pembimbing}</td
                                             >
+                                        </tr>
+                                    {/if}
+                                    {#if doc.dosen_pembimbing_2}
+                                        <tr
+                                            class="border-b border-slate-100 dark:border-slate-700/50"
+                                        >
+                                            <td
+                                                class="py-3 pr-4 text-sm font-semibold text-slate-500 dark:text-slate-400 w-40 align-top"
+                                                >Dosen Pembimbing 2</td
+                                            >
+                                            <td
+                                                class="py-3 text-sm text-slate-900 dark:text-white"
+                                                >{doc.dosen_pembimbing_2}</td
+                                            >
+                                        </tr>
+                                    {/if}
+                                    {#if doc.kata_kunci}
+                                        <tr
+                                            class="border-b border-slate-100 dark:border-slate-700/50"
+                                        >
+                                            <td
+                                                class="py-3 pr-4 text-sm font-semibold text-slate-500 dark:text-slate-400 w-40 align-top"
+                                                >Kata Kunci</td
+                                            >
+                                            <td class="py-3">
+                                                <div
+                                                    class="flex flex-wrap gap-1.5"
+                                                >
+                                                    {#each doc.kata_kunci
+                                                        .split(",")
+                                                        .map((k) => k.trim())
+                                                        .filter((k) => k) as keyword}
+                                                        <span
+                                                            class="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-xs font-semibold rounded-full border border-blue-100 dark:border-blue-800/30"
+                                                        >
+                                                            <span
+                                                                class="material-symbols-outlined"
+                                                                style="font-size: 12px;"
+                                                                >tag</span
+                                                            >
+                                                            {keyword}
+                                                        </span>
+                                                    {/each}
+                                                </div>
+                                            </td>
                                         </tr>
                                     {/if}
                                     <tr>
@@ -751,7 +853,7 @@
                                 <p
                                     class="text-sm text-slate-700 dark:text-slate-300 italic leading-relaxed"
                                 >
-                                    {doc.penulis} ({new Date(
+                                    {doc.penulis} ({doc.tahun && doc.tahun > 0 ? doc.tahun : new Date(
                                         doc.created_at,
                                     ).getFullYear()})
                                     <strong>{doc.judul}</strong>.
@@ -768,7 +870,7 @@
                             </div>
                             <button
                                 on:click={() => {
-                                    const citationText = `${doc.penulis} (${new Date(doc.created_at).getFullYear()}) ${doc.judul}. ${doc.jenis_file ? doc.jenis_file.charAt(0).toUpperCase() + doc.jenis_file.slice(1) + ", " : ""}${doc.fakultas_nama ? doc.fakultas_nama : ""}${doc.prodi_nama ? ", " + doc.prodi_nama : ""}.`;
+                                    const citationText = `${doc.penulis} (${doc.tahun && doc.tahun > 0 ? doc.tahun : new Date(doc.created_at).getFullYear()}) ${doc.judul}. ${doc.jenis_file ? doc.jenis_file.charAt(0).toUpperCase() + doc.jenis_file.slice(1) + ", " : ""}${doc.fakultas_nama ? doc.fakultas_nama : ""}${doc.prodi_nama ? ", " + doc.prodi_nama : ""}.`;
                                     navigator.clipboard.writeText(citationText);
                                     alert("Sitasi berhasil disalin!");
                                 }}
@@ -860,7 +962,7 @@
                                                     >
                                                         {file.file_name}
                                                     </p>
-                                                    {#if file.is_locked && !isMahasiswa && !unlockedFiles[file.id]}
+                                                    {#if file.is_locked && !unlockedFiles[file.id]}
                                                         <span
                                                             class="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 text-[10px] font-bold rounded uppercase"
                                                         >
@@ -871,7 +973,7 @@
                                                             >
                                                             Terkunci
                                                         </span>
-                                                    {:else if file.is_locked && (isMahasiswa || unlockedFiles[file.id])}
+                                                    {:else if file.is_locked && unlockedFiles[file.id]}
                                                         <span
                                                             class="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 text-[10px] font-bold rounded uppercase"
                                                         >
@@ -897,7 +999,7 @@
                                             <div
                                                 class="flex items-center gap-2 flex-shrink-0"
                                             >
-                                                {#if file.is_locked && !isMahasiswa && !unlockedFiles[file.id]}
+                                                {#if file.is_locked && !unlockedFiles[file.id]}
                                                     <!-- File masih terkunci -->
                                                     <span
                                                         class="inline-flex items-center gap-1 px-2 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 text-[10px] font-bold rounded-lg"
@@ -909,7 +1011,7 @@
                                                         >
                                                         Terkunci
                                                     </span>
-                                                {:else if file.is_locked && (isMahasiswa || unlockedFiles[file.id])}
+                                                {:else if file.is_locked && unlockedFiles[file.id]}
                                                     <!-- File terkunci tapi sudah di-unlock -->
                                                     <button
                                                         on:click={() =>
@@ -993,11 +1095,61 @@
                             </div>
 
                             <!-- Document-level Access Section (muncul di bawah daftar file) -->
-                            {#if hasLockedFiles && !isMahasiswa && !allLockedUnlocked}
+                            {#if hasLockedFiles && !allLockedUnlocked}
                                 <div
                                     class="px-6 py-4 bg-amber-50 dark:bg-amber-900/10 border-t border-amber-200/50 dark:border-amber-800/30"
                                 >
-                                    {#if tokenLoading}
+                                    {#if !isLoggedIn}
+                                        <!-- Belum login: arahkan untuk mendaftar dulu -->
+                                        <div class="flex items-start gap-3">
+                                            <span
+                                                class="material-symbols-outlined text-amber-500 flex-shrink-0 mt-0.5"
+                                                style="font-size: 20px;"
+                                                >lock</span
+                                            >
+                                            <div>
+                                                <p
+                                                    class="text-sm font-semibold text-slate-900 dark:text-white mb-1"
+                                                >
+                                                    File Terkunci
+                                                </p>
+                                                <p
+                                                    class="text-xs text-slate-600 dark:text-slate-400 mb-3"
+                                                >
+                                                    Beberapa file pada dokumen
+                                                    ini dikunci. Silakan daftar
+                                                    atau login terlebih dahulu
+                                                    untuk dapat meminta akses.
+                                                </p>
+                                                <div
+                                                    class="flex items-center gap-2"
+                                                >
+                                                    <a
+                                                        href="#/student-signup"
+                                                        class="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-primary to-blue-600 hover:from-primary/90 hover:to-blue-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all"
+                                                    >
+                                                        <span
+                                                            class="material-symbols-outlined"
+                                                            style="font-size: 16px;"
+                                                            >person_add</span
+                                                        >
+                                                        Daftar Akun
+                                                    </a>
+                                                    <a
+                                                        href="#/login"
+                                                        class="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold transition-all"
+                                                    >
+                                                        <span
+                                                            class="material-symbols-outlined"
+                                                            style="font-size: 16px;"
+                                                            >login</span
+                                                        >
+                                                        Login
+                                                    </a>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    {:else if tokenLoading}
                                         <div
                                             class="flex items-center gap-3 justify-center py-2"
                                         >
@@ -1258,7 +1410,8 @@
                                                                     bind:value={
                                                                         otpEmail
                                                                     }
-                                                                    placeholder="contoh@email.com"
+                                                                    placeholder={maskedEmail ||
+                                                                        "contoh@email.com"}
                                                                     class="w-full px-3 py-2.5 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-amber-400 focus:border-amber-400 text-slate-900 dark:text-white placeholder-slate-400 transition-all"
                                                                     on:keydown={(
                                                                         e,
@@ -1267,6 +1420,21 @@
                                                                             "Enter" &&
                                                                         sendOTP()}
                                                                 />
+                                                                {#if isMahasiswa && maskedEmail}
+                                                                    <p
+                                                                        class="mt-1 text-[11px] text-amber-600 dark:text-amber-400 flex items-center gap-1"
+                                                                    >
+                                                                        <span
+                                                                            class="material-symbols-outlined"
+                                                                            style="font-size: 13px;"
+                                                                            >info</span
+                                                                        >
+                                                                        Masukkan
+                                                                        email yang
+                                                                        terdaftar
+                                                                        di akun Anda
+                                                                    </p>
+                                                                {/if}
                                                             </div>
 
                                                             <!-- OTP Error -->
@@ -1661,35 +1829,39 @@
 
                 <!-- Sidebar (Right Column) -->
                 <div class="space-y-6">
-                    <!-- Download All Card -->
-                    <div
-                        class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm"
-                    >
-                        <h3
-                            class="text-sm font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2"
+                    <!-- Download All Card (hanya tampil jika sudah login) -->
+                    {#if isLoggedIn}
+                        <div
+                            class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm"
                         >
-                            <span
-                                class="material-symbols-outlined text-primary"
-                                style="font-size: 18px;">download</span
+                            <h3
+                                class="text-sm font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2"
                             >
-                            Unduh Dokumen
-                        </h3>
-                        <button
-                            on:click={handleDownload}
-                            class="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r {typeStyle.gradient} text-white font-bold rounded-lg shadow-lg hover:shadow-xl hover:opacity-90 transition-all active:scale-[0.98]"
-                        >
-                            <span class="material-symbols-outlined"
-                                >download</span
+                                <span
+                                    class="material-symbols-outlined text-primary"
+                                    style="font-size: 18px;">download</span
+                                >
+                                Unduh Dokumen
+                            </h3>
+                            <button
+                                on:click={handleDownload}
+                                class="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r {typeStyle.gradient} text-white font-bold rounded-lg shadow-lg hover:shadow-xl hover:opacity-90 transition-all active:scale-[0.98]"
                             >
-                            Download
-                        </button>
-                        {#if doc.files && doc.files.length > 1}
-                            <p class="text-xs text-slate-400 mt-2 text-center">
-                                {doc.files.length} file akan diunduh dalam format
-                                ZIP
-                            </p>
-                        {/if}
-                    </div>
+                                <span class="material-symbols-outlined"
+                                    >download</span
+                                >
+                                Download
+                            </button>
+                            {#if doc.files && doc.files.length > 1}
+                                <p
+                                    class="text-xs text-slate-400 mt-2 text-center"
+                                >
+                                    {doc.files.length} file akan diunduh dalam format
+                                    ZIP
+                                </p>
+                            {/if}
+                        </div>
+                    {/if}
 
                     <!-- Metadata Card -->
                     <div
@@ -1786,27 +1958,7 @@
                                     </div>
                                 </div>
                             {/if}
-                            {#if doc.dosen_pembimbing}
-                                <div class="flex items-center gap-3 text-sm">
-                                    <span
-                                        class="material-symbols-outlined text-slate-400"
-                                        style="font-size: 18px;"
-                                        >supervisor_account</span
-                                    >
-                                    <div>
-                                        <p
-                                            class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold"
-                                        >
-                                            Dosen Pembimbing
-                                        </p>
-                                        <p
-                                            class="text-slate-900 dark:text-white font-medium"
-                                        >
-                                            {doc.dosen_pembimbing}
-                                        </p>
-                                    </div>
-                                </div>
-                            {/if}
+
                             {#if doc.view_count > 0}
                                 <div class="flex items-center gap-3 text-sm">
                                     <span
@@ -1825,6 +1977,33 @@
                                         >
                                             {doc.view_count} kali
                                         </p>
+                                    </div>
+                                </div>
+                            {/if}
+                            {#if doc.kata_kunci}
+                                <div class="flex items-start gap-3 text-sm">
+                                    <span
+                                        class="material-symbols-outlined text-slate-400 mt-0.5"
+                                        style="font-size: 18px;">tag</span
+                                    >
+                                    <div>
+                                        <p
+                                            class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold"
+                                        >
+                                            Kata Kunci
+                                        </p>
+                                        <div class="flex flex-wrap gap-1 mt-1">
+                                            {#each doc.kata_kunci
+                                                .split(",")
+                                                .map((k) => k.trim())
+                                                .filter((k) => k) as keyword}
+                                                <span
+                                                    class="inline-block px-2 py-0.5 text-[11px] font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-full"
+                                                >
+                                                    {keyword}
+                                                </span>
+                                            {/each}
+                                        </div>
                                     </div>
                                 </div>
                             {/if}

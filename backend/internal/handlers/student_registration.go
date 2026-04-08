@@ -52,6 +52,16 @@ func StudentSignupHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validasi bahwa email sudah diverifikasi via OTP
+	var verifiedCount int
+	config.DB.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM email_otps WHERE email = $1 AND document_id IS NULL AND is_verified = true AND expires_at > NOW() - INTERVAL '10 minutes'`,
+		email).Scan(&verifiedCount)
+	if verifiedCount == 0 {
+		http.Error(w, `{"error":"Email belum diverifikasi. Silakan verifikasi email terlebih dahulu via OTP."}`, http.StatusForbidden)
+		return
+	}
+
 	// Cek apakah email sudah terdaftar di users
 	var existsInUsers bool
 	config.DB.QueryRow(context.Background(),

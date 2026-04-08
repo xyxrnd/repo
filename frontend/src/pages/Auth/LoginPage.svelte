@@ -71,7 +71,7 @@
                         class="material-symbols-outlined text-primary text-4xl"
                         >local_library</span
                     >
-                    <span class="text-2xl font-bold">ScholarHub</span>
+                    <span class="text-2xl font-bold">Repository UNSUB</span>
                 </a>
                 <h1
                     class="mt-6 text-2xl font-bold text-slate-900 dark:text-white"
@@ -211,14 +211,6 @@
                 <div class="flex-1 h-px bg-slate-200 dark:bg-slate-700"></div>
             </div>
 
-            <!-- Register Link -->
-            <p class="text-center text-slate-600 dark:text-slate-400">
-                Don't have an account?
-                <a
-                    href="#/register"
-                    class="text-primary font-medium hover:underline">Sign up</a
-                >
-            </p>
             <!-- Student Signup Link -->
             <p
                 class="text-center text-slate-500 dark:text-slate-400 mt-2 text-sm"

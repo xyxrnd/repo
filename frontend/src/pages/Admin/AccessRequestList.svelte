@@ -29,7 +29,7 @@
 
     function getKtmImageUrl(path) {
         if (isGDriveId(path)) {
-            return `https://drive.google.com/thumbnail?id=${path}&sz=w800`;
+            return `${API_BASE_URL}/api/gdrive-proxy/${path}`;
         }
         return `${API_BASE_URL}/${path}`;
     }

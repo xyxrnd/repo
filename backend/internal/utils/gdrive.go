@@ -7,13 +7,83 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/option"
 )
 
-// GDriveCredentialsFile path ke file JSON service account
-// Bisa di-override via env GDRIVE_CREDENTIALS_FILE
+// ─── Singleton Drive Service ─────────────────────────────────────────────────
+// Kita buat satu instance *drive.Service yang bisa dipakai berulang kali,
+// karena OAuth2 token source akan auto-refresh access token pakai refresh token.
+
+var (
+	driveService     *drive.Service
+	driveServiceOnce sync.Once
+	driveServiceErr  error
+)
+
+// getDriveService mengembalikan singleton Google Drive service.
+// Mendukung 2 mode:
+//  1. OAuth2 Refresh Token (prioritas) — pakai GDRIVE_CLIENT_ID, GDRIVE_CLIENT_SECRET, GDRIVE_REFRESH_TOKEN
+//  2. Service Account (fallback) — pakai file JSON credentials
+func getDriveService() (*drive.Service, error) {
+	driveServiceOnce.Do(func() {
+		ctx := context.Background()
+
+		clientID := os.Getenv("GDRIVE_CLIENT_ID")
+		clientSecret := os.Getenv("GDRIVE_CLIENT_SECRET")
+		refreshToken := os.Getenv("GDRIVE_REFRESH_TOKEN")
+
+		if clientID != "" && clientSecret != "" && refreshToken != "" {
+			// ── Mode OAuth2 Refresh Token ──
+			fmt.Println("🔑 Google Drive: menggunakan OAuth2 refresh token")
+
+			config := &oauth2.Config{
+				ClientID:     clientID,
+				ClientSecret: clientSecret,
+				Scopes:       []string{drive.DriveFileScope},
+				Endpoint:     google.Endpoint,
+			}
+
+			token := &oauth2.Token{
+				RefreshToken: refreshToken,
+			}
+
+			// TokenSource akan otomatis refresh access token saat expired
+			tokenSource := config.TokenSource(ctx, token)
+
+			driveService, driveServiceErr = drive.NewService(ctx,
+				option.WithTokenSource(tokenSource),
+			)
+			if driveServiceErr != nil {
+				driveServiceErr = fmt.Errorf("gagal membuat Drive service (OAuth2): %v", driveServiceErr)
+			}
+		} else {
+			// ── Fallback: Service Account ──
+			credFile := getCredentialsFile()
+			if _, err := os.Stat(credFile); os.IsNotExist(err) {
+				driveServiceErr = fmt.Errorf(
+					"Google Drive belum dikonfigurasi.\n"+
+						"Opsi 1: Set GDRIVE_CLIENT_ID, GDRIVE_CLIENT_SECRET, GDRIVE_REFRESH_TOKEN di .env\n"+
+						"Opsi 2: Sediakan file credentials service account: %s", credFile)
+				return
+			}
+
+			fmt.Printf("🔑 Google Drive: menggunakan service account (%s)\n", credFile)
+			driveService, driveServiceErr = drive.NewService(ctx, option.WithCredentialsFile(credFile))
+			if driveServiceErr != nil {
+				driveServiceErr = fmt.Errorf("gagal membuat Drive service (service account): %v", driveServiceErr)
+			}
+		}
+	})
+
+	return driveService, driveServiceErr
+}
+
+// getCredentialsFile path ke file JSON service account (fallback)
 func getCredentialsFile() string {
 	if v := os.Getenv("GDRIVE_CREDENTIALS_FILE"); v != "" {
 		return v
@@ -61,16 +131,9 @@ type GDriveUploadResult struct {
 //
 // Return: GDriveUploadResult, error
 func UploadToGDrive(fileReader io.Reader, fileName string) (*GDriveUploadResult, error) {
-	ctx := context.Background()
-
-	credFile := getCredentialsFile()
-	if _, err := os.Stat(credFile); os.IsNotExist(err) {
-		return nil, fmt.Errorf("file credentials Google Drive tidak ditemukan: %s", credFile)
-	}
-
-	srv, err := drive.NewService(ctx, option.WithCredentialsFile(credFile))
+	srv, err := getDriveService()
 	if err != nil {
-		return nil, fmt.Errorf("gagal membuat service Google Drive: %v", err)
+		return nil, err
 	}
 
 	mimeType := getMimeType(fileName)
@@ -122,16 +185,9 @@ func DeleteFromGDrive(fileID string) error {
 		return nil
 	}
 
-	ctx := context.Background()
-
-	credFile := getCredentialsFile()
-	if _, err := os.Stat(credFile); os.IsNotExist(err) {
-		return fmt.Errorf("file credentials Google Drive tidak ditemukan: %s", credFile)
-	}
-
-	srv, err := drive.NewService(ctx, option.WithCredentialsFile(credFile))
+	srv, err := getDriveService()
 	if err != nil {
-		return fmt.Errorf("gagal membuat service Google Drive: %v", err)
+		return err
 	}
 
 	err = srv.Files.Delete(fileID).Do()
@@ -166,4 +222,27 @@ func GetGDriveViewURL(fileID string) string {
 // GetGDriveThumbnailURL menghasilkan URL thumbnail dari Google Drive
 func GetGDriveThumbnailURL(fileID string) string {
 	return fmt.Sprintf("https://drive.google.com/thumbnail?id=%s&sz=w400", fileID)
+}
+
+// GetGDriveFileContent mendownload konten file dari Google Drive
+// Mengembalikan io.ReadCloser dan MIME type. Caller harus menutup reader.
+func GetGDriveFileContent(fileID string) (io.ReadCloser, string, error) {
+	srv, err := getDriveService()
+	if err != nil {
+		return nil, "", err
+	}
+
+	// Ambil metadata untuk MIME type
+	file, err := srv.Files.Get(fileID).Fields("mimeType").Do()
+	if err != nil {
+		return nil, "", fmt.Errorf("gagal mendapatkan metadata file: %v", err)
+	}
+
+	// Download file content
+	resp, err := srv.Files.Get(fileID).Download()
+	if err != nil {
+		return nil, "", fmt.Errorf("gagal mendownload file: %v", err)
+	}
+
+	return resp.Body, file.MimeType, nil
 }

@@ -1,70 +1,66 @@
 <script>
     import { onMount } from "svelte";
-    import { getDocuments } from "../../services/documentService";
+    import { API_ENDPOINTS } from "../../config";
 
-    let contributors = [];
+    let fakultasList = [];
     let loading = true;
+    let maxDocs = 0;
 
     onMount(() => {
-        loadTopContributors();
+        loadTopFakultas();
     });
 
-    async function loadTopContributors() {
+    async function loadTopFakultas() {
         try {
             loading = true;
-            const documents = await getDocuments();
-
-            // Group documents by author
-            const authorMap = {};
-            documents.forEach((doc) => {
-                const author = doc.penulis || "Unknown";
-                if (!authorMap[author]) {
-                    authorMap[author] = {
-                        name: author,
-                        papers: 0,
-                        types: new Set(),
-                    };
+            const response = await fetch(API_ENDPOINTS.TOP_FAKULTAS);
+            if (response.ok) {
+                fakultasList = await response.json();
+                if (fakultasList.length > 0) {
+                    maxDocs = fakultasList[0].total_documents;
                 }
-                authorMap[author].papers++;
-                authorMap[author].types.add(doc.jenis_file);
-            });
-
-            // Convert to array, sort by paper count, take top 4
-            contributors = Object.values(authorMap)
-                .sort((a, b) => b.papers - a.papers)
-                .slice(0, 4)
-                .map((author, index) => ({
-                    ...author,
-                    institution:
-                        Array.from(author.types).join(", ") || "Dokumen",
-                    verified: author.papers >= 3,
-                    rank: index + 1,
-                }));
+            }
         } catch (e) {
-            console.error("Failed to load contributors:", e);
+            console.error("Failed to load top fakultas:", e);
         } finally {
             loading = false;
         }
     }
 
-    function getInitials(name) {
-        if (!name) return "?";
-        return name
-            .split(" ")
-            .map((n) => n[0])
-            .join("")
-            .substring(0, 2)
-            .toUpperCase();
+    function getIcon(index) {
+        const icons = [
+            "school",
+            "biotech",
+            "engineering",
+            "balance",
+            "psychology",
+            "computer",
+        ];
+        return icons[index % icons.length];
     }
 
     function getGradient(index) {
         const gradients = [
-            "from-amber-500 to-orange-500",
-            "from-slate-400 to-slate-500",
-            "from-amber-700 to-amber-800",
-            "from-primary to-blue-600",
+            "from-blue-500 to-indigo-600",
+            "from-emerald-500 to-teal-600",
+            "from-violet-500 to-purple-600",
+            "from-amber-500 to-orange-600",
+            "from-rose-500 to-pink-600",
+            "from-cyan-500 to-sky-600",
         ];
-        return gradients[index] || gradients[3];
+        return gradients[index % gradients.length];
+    }
+
+    function getBarColor(index) {
+        const colors = [
+            "bg-blue-500",
+            "bg-emerald-500",
+            "bg-violet-500",
+            "bg-amber-500",
+            "bg-rose-500",
+            "bg-cyan-500",
+        ];
+        return colors[index % colors.length];
     }
 </script>
 
@@ -72,113 +68,94 @@
     <div class="container mx-auto max-w-6xl px-4">
         <div class="text-center mb-10">
             <h2 class="text-3xl font-bold text-slate-900 dark:text-white mb-3">
-                Kontributor Teratas
+                Fakultas Terpopuler
             </h2>
             <p class="text-slate-500 dark:text-slate-400 max-w-2xl mx-auto">
-                Penulis dengan kontribusi terbanyak dalam repositori.
+                Fakultas dengan kontribusi dokumen terbanyak dalam repositori.
             </p>
         </div>
 
         {#if loading}
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                {#each Array(4) as _}
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                {#each Array(6) as _}
                     <div
-                        class="bg-slate-50 dark:bg-surface-highlight p-6 rounded-xl border border-slate-100 dark:border-slate-700/50 flex flex-col items-center"
+                        class="bg-slate-50 dark:bg-[#1a2836] p-5 rounded-xl border border-slate-100 dark:border-slate-700/50 flex items-center gap-4"
                     >
                         <div
-                            class="w-20 h-20 rounded-full bg-slate-200 dark:bg-slate-700 animate-pulse mb-4"
+                            class="w-12 h-12 rounded-xl bg-slate-200 dark:bg-slate-700 animate-pulse shrink-0"
                         ></div>
-                        <div
-                            class="h-5 w-32 bg-slate-200 dark:bg-slate-700 rounded animate-pulse mb-2"
-                        ></div>
-                        <div
-                            class="h-4 w-24 bg-slate-100 dark:bg-slate-800 rounded animate-pulse mb-3"
-                        ></div>
-                        <div
-                            class="h-8 w-28 bg-slate-100 dark:bg-slate-800 rounded-full animate-pulse"
-                        ></div>
+                        <div class="flex-1">
+                            <div
+                                class="h-4 w-32 bg-slate-200 dark:bg-slate-700 rounded animate-pulse mb-2"
+                            ></div>
+                            <div
+                                class="h-3 w-full bg-slate-100 dark:bg-slate-800 rounded-full animate-pulse"
+                            ></div>
+                        </div>
                     </div>
                 {/each}
             </div>
-        {:else if contributors.length === 0}
+        {:else if fakultasList.length === 0}
             <div class="text-center py-12">
                 <span
                     class="material-symbols-outlined text-5xl text-slate-300 dark:text-slate-700 mb-4"
-                    >group_off</span
+                    >apartment</span
                 >
-                <p class="text-slate-500">Belum ada kontributor</p>
+                <p class="text-slate-500">Belum ada data fakultas</p>
             </div>
         {:else}
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                {#each contributors as contributor, index}
-                    <div
-                        class="bg-slate-50 dark:bg-surface-highlight p-6 rounded-xl border border-slate-100 dark:border-slate-700/50 flex flex-col items-center text-center hover:-translate-y-1 transition-transform cursor-pointer"
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                {#each fakultasList as fak, index}
+                    <a
+                        href="#/browse?fakultas={fak.id}"
+                        class="group bg-slate-50 dark:bg-[#1a2836] p-5 rounded-xl border border-slate-100 dark:border-slate-700/50 hover:border-primary/30 dark:hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 transition-all flex items-center gap-4"
                     >
-                        <div class="relative mb-4">
-                            <div
-                                class="w-20 h-20 rounded-full bg-gradient-to-br {getGradient(
-                                    index,
-                                )} flex items-center justify-center text-white text-2xl font-bold border-2 border-primary"
-                            >
-                                {getInitials(contributor.name)}
-                            </div>
-                            {#if contributor.verified}
-                                <div
-                                    class="absolute -bottom-1 -right-1 bg-white dark:bg-surface-highlight rounded-full p-1 shadow-sm"
-                                >
-                                    <span
-                                        class="material-symbols-outlined text-yellow-500 text-lg"
-                                        >verified</span
-                                    >
-                                </div>
-                            {/if}
-                            {#if index < 3}
-                                <div
-                                    class="absolute -top-1 -left-1 w-6 h-6 rounded-full bg-gradient-to-br {getGradient(
-                                        index,
-                                    )} flex items-center justify-center text-white text-xs font-bold shadow-md"
-                                >
-                                    #{contributor.rank}
-                                </div>
-                            {/if}
-                        </div>
-
-                        <h3
-                            class="font-bold text-slate-900 dark:text-white text-lg"
-                        >
-                            {contributor.name}
-                        </h3>
-                        <p
-                            class="text-primary text-sm font-medium mb-3 line-clamp-1"
-                        >
-                            {contributor.institution}
-                        </p>
-
+                        <!-- Icon -->
                         <div
-                            class="flex gap-4 text-xs text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800 py-2 px-4 rounded-full"
+                            class="w-12 h-12 rounded-xl bg-gradient-to-br {getGradient(index)} flex items-center justify-center text-white shrink-0 shadow-lg group-hover:scale-105 transition-transform"
                         >
                             <span
-                                ><strong class="text-slate-800 dark:text-white"
-                                    >{contributor.papers}</strong
-                                > Dokumen</span
+                                class="material-symbols-outlined"
+                                style="font-size: 24px;">{getIcon(index)}</span
                             >
                         </div>
-                    </div>
+
+                        <!-- Info -->
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center justify-between mb-1.5">
+                                <h3
+                                    class="font-bold text-slate-900 dark:text-white text-sm truncate pr-2 group-hover:text-primary transition-colors"
+                                >
+                                    {fak.nama}
+                                </h3>
+                                <span
+                                    class="text-xs font-bold text-primary shrink-0"
+                                >
+                                    {fak.total_documents}
+                                </span>
+                            </div>
+
+                            <!-- Progress bar -->
+                            <div
+                                class="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden"
+                            >
+                                <div
+                                    class="h-full rounded-full {getBarColor(index)} transition-all duration-700"
+                                    style="width: {maxDocs > 0
+                                        ? (fak.total_documents / maxDocs) * 100
+                                        : 0}%"
+                                ></div>
+                            </div>
+
+                            <p
+                                class="text-[11px] text-slate-400 dark:text-slate-500 mt-1"
+                            >
+                                {fak.total_documents} dokumen
+                            </p>
+                        </div>
+                    </a>
                 {/each}
             </div>
         {/if}
     </div>
 </section>
-
-<style>
-    .bg-surface-highlight {
-        background-color: #233648;
-    }
-    .line-clamp-1 {
-        display: -webkit-box;
-        -webkit-line-clamp: 1;
-        line-clamp: 1;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-    }
-</style>

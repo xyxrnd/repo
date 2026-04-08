@@ -84,16 +84,65 @@ func runMigrations(pool *pgxpool.Pool) {
 			viewed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_document_views_doc_id ON document_views(document_id)`,
+		// Index untuk unique view per IP per hari
+		`CREATE INDEX IF NOT EXISTS idx_document_views_unique_daily ON document_views(document_id, ip_address, (viewed_at::date))`,
+		// Migrasi: bersihkan duplikat view lama lalu buat unique constraint
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (SELECT 1 FROM site_settings WHERE key = 'views_dedup_v1') THEN
+				-- Hapus duplikat, sisakan 1 row per document_id+ip_address+date
+				DELETE FROM document_views a USING document_views b
+				WHERE a.id > b.id
+				AND a.document_id = b.document_id
+				AND a.ip_address = b.ip_address
+				AND a.viewed_at::date = b.viewed_at::date;
+				-- Recalculate view_count agar akurat
+				UPDATE documents SET view_count = (
+					SELECT COUNT(*) FROM document_views WHERE document_id = documents.id
+				);
+				INSERT INTO site_settings (key, value) VALUES ('views_dedup_v1', 'done')
+				ON CONFLICT (key) DO NOTHING;
+			END IF;
+		END $$`,
+		// Unique constraint untuk mencegah duplikat view per IP per hari (race condition safe)
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_document_views_unique_constraint ON document_views(document_id, ip_address, (viewed_at::date))`,
 		// Tambah kolom view_count di documents untuk cache jumlah views
 		`ALTER TABLE documents ADD COLUMN IF NOT EXISTS view_count INT DEFAULT 0`,
+
 		// Tambah kolom abstrak di documents untuk menyimpan abstrak/ringkasan dokumen
 		`ALTER TABLE documents ADD COLUMN IF NOT EXISTS abstrak TEXT DEFAULT ''`,
+		// Tabel site_visits untuk tracking pengunjung website unik
+		`CREATE TABLE IF NOT EXISTS site_visits (
+			id UUID PRIMARY KEY,
+			ip_address VARCHAR(100) DEFAULT '',
+			visited_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_site_visits_ip_date ON site_visits(ip_address, (visited_at::date))`,
 		// Tabel site_settings untuk menyimpan pengaturan situs (key-value)
 		`CREATE TABLE IF NOT EXISTS site_settings (
 			key VARCHAR(100) PRIMARY KEY,
 			value TEXT DEFAULT '',
 			updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 		)`,
+		// Reset semua data view lama (hanya sekali, dicek via marker di site_settings)
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (SELECT 1 FROM site_settings WHERE key = 'views_reset_v1') THEN
+				TRUNCATE TABLE document_views;
+				UPDATE documents SET view_count = 0;
+				INSERT INTO site_settings (key, value) VALUES ('views_reset_v1', 'done')
+				ON CONFLICT (key) DO NOTHING;
+			END IF;
+		END $$`,
+		// Migrasi: reset site_visits (data lama korup karena bug port di IP)
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (SELECT 1 FROM site_settings WHERE key = 'site_visits_reset_v1') THEN
+				TRUNCATE TABLE site_visits;
+				INSERT INTO site_settings (key, value) VALUES ('site_visits_reset_v1', 'done')
+				ON CONFLICT (key) DO NOTHING;
+			END IF;
+		END $$`,
 		// Tabel access_requests untuk permintaan akses file terkunci
 		`CREATE TABLE IF NOT EXISTS access_requests (
 			id UUID PRIMARY KEY,
@@ -141,6 +190,9 @@ func runMigrations(pool *pgxpool.Pool) {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_email_otps_email ON email_otps(email)`,
 		`CREATE INDEX IF NOT EXISTS idx_email_otps_expires ON email_otps(expires_at)`,
+		// Migrasi: ubah document_id di email_otps menjadi nullable (untuk OTP registrasi mahasiswa)
+		`ALTER TABLE email_otps ALTER COLUMN document_id DROP NOT NULL`,
+		`ALTER TABLE email_otps DROP CONSTRAINT IF EXISTS email_otps_document_id_fkey`,
 	}
 
 	for _, q := range queries {

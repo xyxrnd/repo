@@ -1,6 +1,7 @@
 <script>
     import { onMount, onDestroy } from "svelte";
     import { getDocuments } from "../../services/documentService";
+    import authService from "../../services/authService";
 
     let loading = true;
     let documents = [];

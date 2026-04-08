@@ -86,11 +86,18 @@ func main() {
 	http.HandleFunc("/api/documents/popular", handlers.PopularDocumentsHandler) // Must be before /api/documents/
 	http.HandleFunc("/api/documents/", handlers.DocumentByIdHandler)
 
+	// --- Stats Route (Public) ---
+	http.HandleFunc("/api/stats", handlers.StatsHandler)
+	http.HandleFunc("/api/stats/top-fakultas", handlers.TopFakultasHandler)
+
 	// --- File Routes ---
 	// Download file
 	http.HandleFunc("/download/", handlers.DownloadHandler)
 	// Serve uploaded files statically (for individual file downloads)
 	http.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("uploads"))))
+
+	// --- Google Drive Proxy (untuk embed KTM image) ---
+	http.HandleFunc("/api/gdrive-proxy/", handlers.GDriveProxyHandler)
 
 	// --- Fakultas Routes ---
 	// GET: Public (untuk filter dropdown)

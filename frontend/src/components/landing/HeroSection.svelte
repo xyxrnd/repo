@@ -1,6 +1,6 @@
 <script>
     import { onMount } from "svelte";
-    import { getDocuments } from "../../services/documentService";
+    import { API_ENDPOINTS } from "../../config";
     import {
         appName,
         appDescription,
@@ -15,10 +15,8 @@
     // Real stats from API
     let totalDocs = 0;
     let totalAuthors = 0;
-    let categories = new Set();
-
-    // Get unique categories from documents
-    let categoryList = [];
+    let totalVisitors = 0;
+    let todayVisitors = 0;
 
     onMount(() => {
         initSiteSettings();
@@ -28,16 +26,14 @@
     async function loadStats() {
         try {
             loading = true;
-            const documents = await getDocuments();
-            totalDocs = documents.length;
-
-            // Get unique authors
-            const authors = new Set(documents.map((d) => d.penulis));
-            totalAuthors = authors.size;
-
-            // Get unique categories
-            const cats = new Set(documents.map((d) => d.jenis_file));
-            categoryList = Array.from(cats);
+            const response = await fetch(API_ENDPOINTS.STATS);
+            if (response.ok) {
+                const data = await response.json();
+                totalDocs = data.total_documents || 0;
+                totalAuthors = data.total_authors || 0;
+                totalVisitors = data.total_visitors || 0;
+                todayVisitors = data.today_visitors || 0;
+            }
         } catch (e) {
             console.error("Failed to load stats:", e);
         } finally {
@@ -45,20 +41,27 @@
         }
     }
 
-    const stats = [
+    $: stats = [
         {
-            getValue: () => (loading ? "..." : `${totalDocs}`),
+            value: loading ? "..." : `${totalDocs}`,
             label: "Total Dokumen",
+            icon: "description",
         },
         {
-            getValue: () => (loading ? "..." : `${totalAuthors}`),
+            value: loading ? "..." : `${totalAuthors}`,
             label: "Penulis",
+            icon: "group",
         },
         {
-            getValue: () => (loading ? "..." : `${categoryList.length}`),
-            label: "Kategori",
+            value: loading ? "..." : `${totalVisitors}`,
+            label: "Total Pengunjung",
+            icon: "visibility",
         },
-        { getValue: () => "Gratis", label: "Akses Selamanya" },
+        {
+            value: loading ? "..." : `${todayVisitors}`,
+            label: "Pengunjung Hari Ini",
+            icon: "today",
+        },
     ];
 
     function handleSearch() {
@@ -127,7 +130,6 @@
                         class="w-full h-12 md:h-full appearance-none bg-slate-50 dark:bg-[#101922] border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-lg px-4 pr-10 focus:outline-none focus:ring-2 focus:ring-primary/50 text-sm font-medium cursor-pointer"
                     >
                         <option>Semua</option>
-                        <option>PDF</option>
                         <option>Skripsi</option>
                         <option>Tesis</option>
                         <option>Jurnal</option>
@@ -194,18 +196,17 @@
         </div>
 
         <!-- Stats Grid -->
-        <div
-            class="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-4xl mt-8"
-        >
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-3xl mt-8">
             {#each stats as stat}
                 <div
                     class="flex flex-col items-center justify-center p-4 rounded-xl bg-white dark:bg-surface-highlight border border-slate-200 dark:border-slate-700/50 shadow-sm hover:shadow-md transition-shadow"
                 >
+                    <span class="material-symbols-outlined text-primary/60 text-xl mb-1">{stat.icon}</span>
                     <p class="text-primary text-2xl md:text-3xl font-bold">
-                        {stat.getValue()}
+                        {stat.value}
                     </p>
                     <p
-                        class="text-slate-500 dark:text-slate-400 text-sm font-medium"
+                        class="text-slate-500 dark:text-slate-400 text-xs md:text-sm font-medium text-center"
                     >
                         {stat.label}
                     </p>

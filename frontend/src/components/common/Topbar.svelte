@@ -20,17 +20,17 @@
             <span class="material-symbols-outlined">menu</span>
         </button>
 
-        <span class="text-slate-400 material-symbols-outlined hidden md:block"
+        <!-- <span class="text-slate-400 material-symbols-outlined hidden md:block"
             >search</span
         >
         <input
             class="bg-transparent border-none focus:ring-0 text-sm text-slate-600 placeholder:text-slate-400 w-40 md:w-64 hidden md:block"
             placeholder="Cepat temukan fitur..."
             type="text"
-        />
+        /> -->
     </div>
 
-    <div class="flex items-center gap-2 md:gap-4">
+    <!-- <div class="flex items-center gap-2 md:gap-4">
         <button
             class="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg relative"
         >
@@ -50,5 +50,5 @@
             <span>Bahasa Indonesia</span>
             <span class="material-symbols-outlined text-lg">expand_more</span>
         </button>
-    </div>
+    </div> -->
 </header>

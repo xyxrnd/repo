@@ -64,8 +64,8 @@
     function buildTahunList() {
         const years = new Set();
         documents.forEach((doc) => {
-            if (doc.created_at) {
-                years.add(new Date(doc.created_at).getFullYear());
+            if (doc.tahun && doc.tahun > 0) {
+                years.add(doc.tahun);
             }
         });
         tahunList = [...years].sort((a, b) => b - a);
@@ -143,8 +143,7 @@
             filterProdi === "all" || doc.prodi_id === filterProdi;
         const matchesTahun =
             filterTahun === "all" ||
-            (doc.created_at &&
-                new Date(doc.created_at).getFullYear() === Number(filterTahun));
+            (doc.tahun && doc.tahun === Number(filterTahun));
         return (
             matchesSearch &&
             matchesStatus &&

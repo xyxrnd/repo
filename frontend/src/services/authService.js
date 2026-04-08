@@ -168,6 +168,7 @@ class AuthService {
     logout() {
         this.clearAuth();
         window.location.hash = "/";
+        window.location.reload();
     }
 }
 

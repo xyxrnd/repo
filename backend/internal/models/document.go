@@ -16,6 +16,7 @@ type Document struct {
 	DosenPembimbing  string         `json:"dosen_pembimbing,omitempty"`
 	DosenPembimbing2 string         `json:"dosen_pembimbing_2,omitempty"`
 	KataKunci        string         `json:"kata_kunci,omitempty"`
+	Tahun            int            `json:"tahun"`
 	FilePath         string         `json:"file_path,omitempty"`
 	Status           string         `json:"status"`
 	ViewCount        int            `json:"view_count"`
@@ -46,6 +47,7 @@ type CreateDocumentRequest struct {
 	DosenPembimbing  string `json:"dosen_pembimbing"`
 	DosenPembimbing2 string `json:"dosen_pembimbing_2"`
 	KataKunci        string `json:"kata_kunci"`
+	Tahun            int    `json:"tahun"`
 }
 
 // UpdateDocumentRequest adalah request body untuk update dokumen
@@ -60,6 +62,7 @@ type UpdateDocumentRequest struct {
 	DosenPembimbing  string `json:"dosen_pembimbing"`
 	DosenPembimbing2 string `json:"dosen_pembimbing_2"`
 	KataKunci        string `json:"kata_kunci"`
+	Tahun            int    `json:"tahun"`
 }
 
 // AccessRequest mewakili permintaan akses ke dokumen yang memiliki file terkunci

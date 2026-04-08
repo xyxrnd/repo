@@ -2,6 +2,8 @@
     import { onMount } from "svelte";
     import { getDocuments } from "../../services/documentService";
     import { querystring } from "svelte-spa-router";
+    import fakultasService from "../../services/fakultasService.js";
+    import prodiService from "../../services/prodiService.js";
 
     let documents = [];
     let filteredDocuments = [];
@@ -11,6 +13,15 @@
     let selectedSort = "terbaru";
     let viewMode = "grid";
 
+    // Filters
+    let selectedFakultas = "";
+    let selectedProdi = "";
+    let selectedTahun = "";
+
+    let fakultasList = [];
+    let prodiList = [];
+    let tahunList = [];
+
     // Get categories from documents
     let categories = ["Semua"];
 
@@ -19,13 +30,36 @@
         const params = new URLSearchParams($querystring);
         const q = params.get("q");
         const cat = params.get("category");
+        const fak = params.get("fakultas");
         if (q) searchQuery = q;
         if (cat) selectedCategory = cat;
+        if (fak) selectedFakultas = fak;
     }
 
-    onMount(() => {
-        loadDocuments();
+    onMount(async () => {
+        await Promise.all([loadFakultas(), loadDocuments()]);
     });
+
+    async function loadFakultas() {
+        try {
+            fakultasList = await fakultasService.getAll();
+        } catch (e) {
+            console.error("Gagal memuat fakultas:", e);
+        }
+    }
+
+    async function onFakultasChange() {
+        selectedProdi = "";
+        prodiList = [];
+        if (selectedFakultas) {
+            try {
+                prodiList = await prodiService.getAll(selectedFakultas);
+            } catch (e) {
+                console.error("Gagal memuat prodi:", e);
+            }
+        }
+        filterDocuments();
+    }
 
     async function loadDocuments() {
         try {
@@ -35,6 +69,23 @@
             // Extract unique categories
             const cats = new Set(documents.map((d) => d.jenis_file));
             categories = ["Semua", ...Array.from(cats)];
+
+            // Extract unique tahun
+            const years = new Set(
+                documents
+                    .map((d) => d.tahun)
+                    .filter((t) => t && t > 0),
+            );
+            tahunList = Array.from(years).sort((a, b) => b - a);
+
+            // If fakultas was set via query param, load prodi
+            if (selectedFakultas) {
+                try {
+                    prodiList = await prodiService.getAll(selectedFakultas);
+                } catch (e) {
+                    console.error(e);
+                }
+            }
 
             filterDocuments();
         } catch (e) {
@@ -54,6 +105,7 @@
                 (doc) =>
                     doc.judul?.toLowerCase().includes(query) ||
                     doc.penulis?.toLowerCase().includes(query) ||
+                    doc.kata_kunci?.toLowerCase().includes(query) ||
                     doc.jenis_file?.toLowerCase().includes(query),
             );
         }
@@ -62,6 +114,25 @@
         if (selectedCategory && selectedCategory !== "Semua") {
             result = result.filter(
                 (doc) => doc.jenis_file === selectedCategory,
+            );
+        }
+
+        // Filter by fakultas
+        if (selectedFakultas) {
+            result = result.filter(
+                (doc) => doc.fakultas_id === selectedFakultas,
+            );
+        }
+
+        // Filter by prodi
+        if (selectedProdi) {
+            result = result.filter((doc) => doc.prodi_id === selectedProdi);
+        }
+
+        // Filter by tahun
+        if (selectedTahun) {
+            result = result.filter(
+                (doc) => doc.tahun === parseInt(selectedTahun),
             );
         }
 
@@ -85,7 +156,29 @@
         filteredDocuments = result;
     }
 
-    $: searchQuery, selectedCategory, selectedSort, filterDocuments();
+    $: searchQuery,
+        selectedCategory,
+        selectedSort,
+        selectedProdi,
+        selectedTahun,
+        filterDocuments();
+
+    function clearFilters() {
+        searchQuery = "";
+        selectedCategory = "Semua";
+        selectedFakultas = "";
+        selectedProdi = "";
+        selectedTahun = "";
+        prodiList = [];
+        filterDocuments();
+    }
+
+    $: hasActiveFilters =
+        searchQuery ||
+        (selectedCategory && selectedCategory !== "Semua") ||
+        selectedFakultas ||
+        selectedProdi ||
+        selectedTahun;
 
     function formatDate(dateString) {
         const date = new Date(dateString);
@@ -106,11 +199,23 @@
                 icon: "school",
                 color: "text-blue-500 bg-blue-100 dark:bg-blue-900/30",
             },
+            skripsi: {
+                icon: "school",
+                color: "text-blue-500 bg-blue-100 dark:bg-blue-900/30",
+            },
             Tesis: {
                 icon: "menu_book",
                 color: "text-purple-500 bg-purple-100 dark:bg-purple-900/30",
             },
+            tesis: {
+                icon: "menu_book",
+                color: "text-purple-500 bg-purple-100 dark:bg-purple-900/30",
+            },
             Jurnal: {
+                icon: "article",
+                color: "text-teal-500 bg-teal-100 dark:bg-teal-900/30",
+            },
+            jurnal: {
                 icon: "article",
                 color: "text-teal-500 bg-teal-100 dark:bg-teal-900/30",
             },
@@ -180,6 +285,76 @@
 
     <!-- Content -->
     <div class="container mx-auto max-w-6xl px-4 py-8">
+        <!-- Filters Bar -->
+        <div
+            class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 mb-6"
+        >
+            <div class="flex items-center gap-2 mb-3">
+                <span
+                    class="material-symbols-outlined text-primary"
+                    style="font-size: 20px;">filter_list</span
+                >
+                <span
+                    class="text-sm font-bold text-slate-700 dark:text-slate-300"
+                    >Filter</span
+                >
+                {#if hasActiveFilters}
+                    <button
+                        on:click={clearFilters}
+                        class="ml-auto text-xs text-red-500 hover:text-red-600 font-medium flex items-center gap-1 transition-colors"
+                    >
+                        <span
+                            class="material-symbols-outlined"
+                            style="font-size: 14px;">close</span
+                        >
+                        Reset Filter
+                    </button>
+                {/if}
+            </div>
+            <div
+                class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"
+            >
+                <!-- Fakultas -->
+                <select
+                    bind:value={selectedFakultas}
+                    on:change={onFakultasChange}
+                    class="px-3 py-2.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                >
+                    <option value="">Semua Fakultas</option>
+                    {#each fakultasList as fak}
+                        <option value={fak.id}>{fak.nama}</option>
+                    {/each}
+                </select>
+
+                <!-- Prodi -->
+                <select
+                    bind:value={selectedProdi}
+                    disabled={!selectedFakultas}
+                    class="px-3 py-2.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+                >
+                    <option value=""
+                        >{selectedFakultas
+                            ? "Semua Program Studi"
+                            : "Pilih Fakultas Terlebih Dahulu"}</option
+                    >
+                    {#each prodiList as prodi}
+                        <option value={prodi.id}>{prodi.nama}</option>
+                    {/each}
+                </select>
+
+                <!-- Tahun -->
+                <select
+                    bind:value={selectedTahun}
+                    class="px-3 py-2.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                >
+                    <option value="">Semua Tahun</option>
+                    {#each tahunList as year}
+                        <option value={year}>{year}</option>
+                    {/each}
+                </select>
+            </div>
+        </div>
+
         <!-- Toolbar -->
         <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
             <div
@@ -268,6 +443,14 @@
                 <p class="text-slate-500">
                     Coba ubah kata kunci atau filter pencarian Anda.
                 </p>
+                {#if hasActiveFilters}
+                    <button
+                        on:click={clearFilters}
+                        class="mt-4 px-4 py-2 bg-primary/10 text-primary font-medium rounded-lg hover:bg-primary/20 transition-colors"
+                    >
+                        Reset Semua Filter
+                    </button>
+                {/if}
             </div>
         {:else if viewMode === "grid"}
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -288,11 +471,20 @@
                                             .icon}</span
                                     >
                                 </div>
-                                <span
-                                    class="px-3 py-1 text-xs font-bold uppercase rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400"
-                                >
-                                    {doc.jenis_file}
-                                </span>
+                                <div class="flex items-center gap-2">
+                                    {#if doc.tahun && doc.tahun > 0}
+                                        <span
+                                            class="px-2 py-0.5 text-xs font-bold rounded-full bg-primary/10 text-primary"
+                                        >
+                                            {doc.tahun}
+                                        </span>
+                                    {/if}
+                                    <span
+                                        class="px-3 py-1 text-xs font-bold uppercase rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400"
+                                    >
+                                        {doc.jenis_file}
+                                    </span>
+                                </div>
                             </div>
 
                             <a href="#/document/{doc.id}">
@@ -304,7 +496,7 @@
                             </a>
 
                             <div
-                                class="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400 mb-4"
+                                class="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400 mb-2"
                             >
                                 <div
                                     class="w-6 h-6 rounded-full bg-gradient-to-br from-primary to-blue-600 flex items-center justify-center text-white text-xs font-bold"
@@ -313,6 +505,21 @@
                                 </div>
                                 <span class="truncate">{doc.penulis}</span>
                             </div>
+
+                            {#if doc.fakultas_nama}
+                                <p
+                                    class="text-xs text-slate-400 dark:text-slate-500 mb-2 truncate"
+                                >
+                                    <span
+                                        class="material-symbols-outlined text-xs align-middle mr-0.5"
+                                        >apartment</span
+                                    >
+                                    {doc.fakultas_nama}
+                                    {#if doc.prodi_nama}
+                                        — {doc.prodi_nama}
+                                    {/if}
+                                </p>
+                            {/if}
 
                             <p
                                 class="text-sm text-slate-500 dark:text-slate-400"
@@ -366,11 +573,20 @@
                                         {doc.judul}
                                     </h3>
                                 </a>
-                                <span
-                                    class="px-3 py-1 text-xs font-bold uppercase rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 flex-shrink-0"
-                                >
-                                    {doc.jenis_file}
-                                </span>
+                                <div class="flex items-center gap-2 shrink-0">
+                                    {#if doc.tahun && doc.tahun > 0}
+                                        <span
+                                            class="px-2 py-0.5 text-xs font-bold rounded-full bg-primary/10 text-primary"
+                                        >
+                                            {doc.tahun}
+                                        </span>
+                                    {/if}
+                                    <span
+                                        class="px-3 py-1 text-xs font-bold uppercase rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400"
+                                    >
+                                        {doc.jenis_file}
+                                    </span>
+                                </div>
                             </div>
 
                             <div
@@ -384,6 +600,10 @@
                                     </div>
                                     <span>{doc.penulis}</span>
                                 </div>
+                                {#if doc.fakultas_nama}
+                                    <span>•</span>
+                                    <span>{doc.fakultas_nama}</span>
+                                {/if}
                                 <span>•</span>
                                 <span>{formatDate(doc.created_at)}</span>
                             </div>

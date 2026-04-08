@@ -1,5 +1,6 @@
 <script>
     import { onMount } from "svelte";
+    import { push } from "svelte-spa-router";
     import authService from "../services/authService";
     import {
         appName,
@@ -20,7 +21,9 @@
     });
 
     function handleLogout() {
-        authService.logout();
+        authService.clearAuth();
+        user = null;
+        push("/");
     }
 
     function toggleMobileMenu() {
@@ -174,7 +177,7 @@
                 <hr class="border-slate-200 dark:border-slate-700 my-2" />
 
                 {#if user}
-                    <a
+                    <!-- <a
                         class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium transition-colors"
                         href="#/admin"
                         on:click={closeMobileMenu}
@@ -183,7 +186,7 @@
                             >dashboard</span
                         >
                         Dashboard
-                    </a>
+                    </a> -->
                     <div class="flex items-center gap-3 px-4 py-3">
                         <div
                             class="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-blue-600 flex items-center justify-center text-white font-bold text-sm"
@@ -269,7 +272,7 @@
                             Membangun infrastruktur untuk sains terbuka.
                         {/if}
                     </p>
-                    <div class="flex gap-4">
+                    <!-- <div class="flex gap-4">
                         <a
                             class="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-primary hover:text-white transition-colors"
                             href="#"
@@ -286,7 +289,7 @@
                                 >mail</span
                             >
                         </a>
-                    </div>
+                    </div> -->
                 </div>
                 <div>
                     <h4 class="font-bold text-slate-900 dark:text-white mb-4">
@@ -301,13 +304,13 @@
                                 href="#/browse">Jelajahi Koleksi</a
                             >
                         </li>
-                        <li>
+                        <!-- <li>
                             <a
                                 class="hover:text-primary transition-colors"
                                 href="#">Penulis A-Z</a
                             >
-                        </li>
-                        <li>
+                        </li> -->
+                        <!-- <li>
                             <a
                                 class="hover:text-primary transition-colors"
                                 href="#">Pencarian Lanjutan</a
@@ -318,7 +321,7 @@
                                 class="hover:text-primary transition-colors"
                                 href="#">Submit Dokumen</a
                             >
-                        </li>
+                        </li> -->
                     </ul>
                 </div>
                 <div>
@@ -331,10 +334,24 @@
                         <li>
                             <a
                                 class="hover:text-primary transition-colors"
-                                href="#">Untuk Peneliti</a
+                                href="https://kbk2988048.perpustakaandigital.com/"
+                                >Perpustakaan Digital</a
                             >
                         </li>
                         <li>
+                            <a
+                                class="hover:text-primary transition-colors"
+                                href="https://lib.unsub.ac.id/">Library Unsub</a
+                            >
+                        </li>
+                        <li>
+                            <a
+                                class="hover:text-primary transition-colors"
+                                href="https://ejournal.unsub.ac.id/"
+                                >E-Journal Unsub</a
+                            >
+                        </li>
+                        <!-- <li>
                             <a
                                 class="hover:text-primary transition-colors"
                                 href="#">Untuk Pustakawan</a
@@ -351,7 +368,7 @@
                                 class="hover:text-primary transition-colors"
                                 href="#">Panduan Sitasi</a
                             >
-                        </li>
+                        </li> -->
                     </ul>
                 </div>
                 <div>
@@ -361,19 +378,19 @@
                     <ul
                         class="space-y-3 text-sm text-slate-500 dark:text-slate-400"
                     >
-                        <li>
+                        <!-- <li>
                             <a
                                 class="hover:text-primary transition-colors"
                                 href="#">Pusat Bantuan</a
                             >
-                        </li>
+                        </li> -->
                         <li>
                             <a
                                 class="hover:text-primary transition-colors"
                                 href="#">Hubungi Kami</a
                             >
                         </li>
-                        <li>
+                        <!-- <li>
                             <a
                                 class="hover:text-primary transition-colors"
                                 href="#">Status Sistem</a
@@ -384,7 +401,7 @@
                                 class="hover:text-primary transition-colors"
                                 href="#">Laporkan Masalah</a
                             >
-                        </li>
+                        </li> -->
                     </ul>
                 </div>
             </div>
@@ -397,16 +414,9 @@
                     {#if $footerText}
                         {$footerText}
                     {:else}
-                        © 2025 {$appName} Digital Repository. All rights reserved.
+                        © 2026 {$appName} Digital Repository. All rights reserved.
                     {/if}
                 </p>
-                <div
-                    class="flex gap-6 text-sm text-slate-400 dark:text-slate-600"
-                >
-                    <a class="hover:text-primary" href="#">Privacy Policy</a>
-                    <a class="hover:text-primary" href="#">Terms of Service</a>
-                    <a class="hover:text-primary" href="#">Cookie Settings</a>
-                </div>
             </div>
         </div>
     </footer>

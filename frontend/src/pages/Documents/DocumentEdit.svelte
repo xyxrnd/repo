@@ -18,8 +18,12 @@
     let fakultasId = "";
     let prodiId = "";
     let dosenPembimbing = "";
-    let files = [];
-    let existingFiles = [];
+    let kataKunci = "";
+    let tahun = "";
+
+    // File management: unified list of existing + new files
+    // Each item: { type: 'existing'|'new', id?, file_name, file_size, file?, order }
+    let fileList = [];
     let confirmCheck = false;
 
     let loading = false;
@@ -57,9 +61,18 @@
             fakultasId = doc.fakultas_id || "";
             prodiId = doc.prodi_id || "";
             dosenPembimbing = doc.dosen_pembimbing || "";
-            existingFiles = doc.files || [];
+            kataKunci = doc.kata_kunci || "";
+            tahun = doc.tahun || "";
 
-            // Muat prodi berdasarkan fakultas yang sudah ada
+            // Initialize fileList from existing files
+            fileList = (doc.files || []).map((f, i) => ({
+                type: "existing",
+                id: f.id,
+                file_name: f.file_name,
+                file_size: f.file_size,
+                order: f.file_order ?? i,
+            }));
+
             if (fakultasId) {
                 await loadProdi(fakultasId);
             }
@@ -89,17 +102,55 @@
         }
     }
 
-    function handleFileChange(e) {
-        files = Array.from(e.target.files);
+    function removeFile(index) {
+        fileList = fileList.filter((_, i) => i !== index);
+        // Re-order
+        fileList = fileList.map((f, i) => ({ ...f, order: i }));
     }
 
-    function removeNewFile(index) {
-        files = files.filter((_, i) => i !== index);
-        /** @type {HTMLInputElement | null} */
-        const input = /** @type {HTMLInputElement} */ (
-            document.getElementById("file-input-edit")
-        );
-        if (input) input.value = "";
+    function addNewFiles(e) {
+        const newFiles = Array.from(e.target.files);
+        for (const file of newFiles) {
+            fileList = [
+                ...fileList,
+                {
+                    type: "new",
+                    file_name: file.name,
+                    file_size: file.size,
+                    file: file,
+                    order: fileList.length,
+                },
+            ];
+        }
+        // Reset input
+        e.target.value = "";
+    }
+
+    function replaceFile(index, e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        fileList[index] = {
+            type: "new",
+            file_name: file.name,
+            file_size: file.size,
+            file: file,
+            order: fileList[index].order,
+        };
+        fileList = fileList; // trigger reactivity
+        e.target.value = "";
+    }
+
+    function moveFile(index, direction) {
+        const newIndex = index + direction;
+        if (newIndex < 0 || newIndex >= fileList.length) return;
+
+        const temp = fileList[index];
+        fileList[index] = fileList[newIndex];
+        fileList[newIndex] = temp;
+
+        // Re-order
+        fileList = fileList.map((f, i) => ({ ...f, order: i }));
     }
 
     function formatFileSize(bytes) {
@@ -118,6 +169,11 @@
             return;
         }
 
+        if (fileList.length === 0) {
+            error = "Minimal harus ada 1 file.";
+            return;
+        }
+
         loading = true;
 
         const formData = new FormData();
@@ -127,20 +183,26 @@
         formData.append("category", fileType);
         formData.append("status", status);
         formData.append("dosen_pembimbing", dosenPembimbing);
+        formData.append("kata_kunci", kataKunci);
+        if (tahun) formData.append("tahun", String(tahun));
 
-        if (fakultasId) {
-            formData.append("fakultas_id", fakultasId);
-        }
-        if (prodiId) {
-            formData.append("prodi_id", prodiId);
-        }
+        if (fakultasId) formData.append("fakultas_id", fakultasId);
+        if (prodiId) formData.append("prodi_id", prodiId);
 
-        // Append new files jika ada
-        if (files.length > 0) {
-            for (const file of files) {
-                formData.append("files", file);
-            }
+        // Build existing_files array (files to keep with their order)
+        const existingFiles = fileList
+            .filter((f) => f.type === "existing")
+            .map((f) => ({ id: f.id, order: f.order }));
+        formData.append("existing_files", JSON.stringify(existingFiles));
+
+        // Append new files and their orders
+        const newFiles = fileList.filter((f) => f.type === "new");
+        const newFileOrders = [];
+        for (const nf of newFiles) {
+            formData.append("files", nf.file);
+            newFileOrders.push(nf.order);
         }
+        formData.append("new_file_orders", newFileOrders.join(","));
 
         try {
             await updateDocument(params.id, formData);
@@ -362,21 +424,63 @@
                         </div>
                     </div>
 
-                    <!-- Dosen Pembimbing -->
-                    <div>
+                    <!-- Dosen Pembimbing + Kata Kunci -->
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <div>
+                            <label
+                                for="edit-dosen"
+                                class="block text-sm font-bold mb-2 text-slate-700 dark:text-slate-300"
+                            >
+                                Dosen Pembimbing
+                            </label>
+                            <input
+                                id="edit-dosen"
+                                bind:value={dosenPembimbing}
+                                class="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border-none rounded-lg focus:ring-2 focus:ring-primary/50 text-sm transition-all"
+                                placeholder="Contoh: Prof. Dr. Ahmad, M.Si"
+                                type="text"
+                            />
+                        </div>
+                        <div>
+                            <label
+                                for="edit-katakunci"
+                                class="block text-sm font-bold mb-2 text-slate-700 dark:text-slate-300"
+                            >
+                                Kata Kunci
+                            </label>
+                            <input
+                                id="edit-katakunci"
+                                bind:value={kataKunci}
+                                class="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border-none rounded-lg focus:ring-2 focus:ring-primary/50 text-sm transition-all"
+                                placeholder="Pisahkan dengan koma: AI, Machine Learning, Data"
+                                type="text"
+                            />
+                            <p class="mt-1 text-xs text-slate-400">
+                                Pisahkan kata kunci dengan tanda koma.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Tahun -->
+                    <div class="w-full md:w-1/2">
                         <label
-                            for="edit-dosen"
+                            for="edit-tahun"
                             class="block text-sm font-bold mb-2 text-slate-700 dark:text-slate-300"
                         >
-                            Dosen Pembimbing
+                            Tahun Dokumen
                         </label>
                         <input
-                            id="edit-dosen"
-                            bind:value={dosenPembimbing}
+                            id="edit-tahun"
+                            bind:value={tahun}
                             class="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border-none rounded-lg focus:ring-2 focus:ring-primary/50 text-sm transition-all"
-                            placeholder="Contoh: Prof. Dr. Ahmad, M.Si"
-                            type="text"
+                            placeholder="Contoh: 2024"
+                            type="number"
+                            min="1900"
+                            max="2099"
                         />
+                        <p class="mt-1 text-xs text-slate-400">
+                            Tahun penerbitan/penyusunan dokumen.
+                        </p>
                     </div>
 
                     <!-- Status -->
@@ -397,113 +501,184 @@
                         </select>
                     </div>
 
-                    <!-- Existing Files -->
-                    {#if existingFiles.length > 0}
-                        <div>
-                            <p
-                                class="text-sm font-bold mb-2 text-slate-700 dark:text-slate-300"
-                            >
-                                File Saat Ini
-                            </p>
-                            <div class="space-y-2">
-                                {#each existingFiles as ef}
-                                    <div
-                                        class="flex items-center gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800"
-                                    >
-                                        <span
-                                            class="material-symbols-outlined text-blue-600 text-base"
-                                            >description</span
-                                        >
-                                        <span
-                                            class="text-sm text-blue-700 dark:text-blue-400 truncate"
-                                            >{ef.file_name}</span
-                                        >
-                                        <span
-                                            class="text-xs text-blue-500 shrink-0"
-                                            >({formatFileSize(
-                                                ef.file_size,
-                                            )})</span
-                                        >
-                                    </div>
-                                {/each}
-                            </div>
-                        </div>
-                    {/if}
-
-                    <!-- Upload File (Optional - replace) -->
+                    <!-- ====== FILE MANAGEMENT ====== -->
                     <div>
-                        <label
-                            for="file-input-edit"
-                            class="block text-sm font-bold mb-2 text-slate-700 dark:text-slate-300"
-                        >
-                            Ganti File (Opsional)
-                        </label>
-                        <div
-                            class="mb-2 p-3 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 rounded-lg text-sm flex items-center gap-2"
-                        >
-                            <span class="material-symbols-outlined text-base"
-                                >warning</span
+                        <div class="flex items-center justify-between mb-3">
+                            <p
+                                class="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2"
                             >
-                            Jika Anda mengunggah file baru, file lama akan diganti.
-                            Biarkan kosong jika tidak ingin mengganti.
-                        </div>
-                        <input
-                            id="file-input-edit"
-                            type="file"
-                            on:change={handleFileChange}
-                            accept=".pdf,.doc,.docx"
-                            multiple
-                            class="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border-none rounded-lg focus:ring-2 focus:ring-primary/50 text-sm transition-all file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary file:text-white file:font-semibold hover:file:bg-primary/90"
-                        />
-                        <p class="mt-1 text-xs text-slate-400">
-                            Format: PDF, DOC, DOCX (Maks 50MB per file). Anda
-                            dapat memilih beberapa file.
-                        </p>
-
-                        {#if files.length > 0}
-                            <div class="mt-3 space-y-2">
-                                <p
-                                    class="text-sm font-bold text-slate-700 dark:text-slate-300"
+                                <span
+                                    class="material-symbols-outlined text-primary"
+                                    style="font-size: 18px;">folder</span
                                 >
-                                    {files.length} file baru dipilih:
+                                Kelola File ({fileList.length} file)
+                            </p>
+                            <label
+                                class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-lg text-xs font-bold cursor-pointer transition-all"
+                            >
+                                <span
+                                    class="material-symbols-outlined"
+                                    style="font-size: 16px;">add</span
+                                >
+                                Tambah File
+                                <input
+                                    type="file"
+                                    accept=".pdf,.doc,.docx"
+                                    multiple
+                                    on:change={addNewFiles}
+                                    class="hidden"
+                                />
+                            </label>
+                        </div>
+
+                        {#if fileList.length === 0}
+                            <div
+                                class="flex flex-col items-center justify-center py-8 bg-slate-50 dark:bg-slate-800/50 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700"
+                            >
+                                <span
+                                    class="material-symbols-outlined text-4xl text-slate-300 dark:text-slate-600 mb-2"
+                                    >upload_file</span
+                                >
+                                <p
+                                    class="text-sm text-slate-400 dark:text-slate-500"
+                                >
+                                    Belum ada file. Klik "Tambah File" untuk
+                                    mengunggah.
                                 </p>
-                                {#each files as file, i}
+                            </div>
+                        {:else}
+                            <div class="space-y-2">
+                                {#each fileList as item, index (item.order + '-' + item.file_name)}
                                     <div
-                                        class="flex items-center justify-between px-3 py-2 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800"
+                                        class="flex items-center gap-3 px-4 py-3 rounded-xl border transition-all {item.type ===
+                                        'existing'
+                                            ? 'bg-blue-50/50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800/40'
+                                            : 'bg-green-50/50 dark:bg-green-900/10 border-green-200 dark:border-green-800/40'}"
                                     >
+                                        <!-- Order number -->
                                         <div
-                                            class="flex items-center gap-2 min-w-0"
+                                            class="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 {item.type ===
+                                            'existing'
+                                                ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600'
+                                                : 'bg-green-100 dark:bg-green-900/30 text-green-600'}"
                                         >
-                                            <span
-                                                class="material-symbols-outlined text-green-600 text-base shrink-0"
-                                                >check_circle</span
-                                            >
-                                            <span
-                                                class="text-sm text-green-700 dark:text-green-400 truncate"
-                                                >{file.name}</span
-                                            >
-                                            <span
-                                                class="text-xs text-green-500 shrink-0"
-                                                >({formatFileSize(
-                                                    file.size,
-                                                )})</span
-                                            >
+                                            {index + 1}
                                         </div>
-                                        <button
-                                            type="button"
-                                            on:click={() => removeNewFile(i)}
-                                            class="text-red-400 hover:text-red-600 transition-colors shrink-0 ml-2"
-                                            title="Hapus file"
+
+                                        <!-- File icon -->
+                                        <span
+                                            class="material-symbols-outlined shrink-0 {item.type ===
+                                            'existing'
+                                                ? 'text-blue-500'
+                                                : 'text-green-500'}"
+                                            style="font-size: 20px;"
+                                            >{item.type === "existing"
+                                                ? "description"
+                                                : "note_add"}</span
                                         >
-                                            <span
-                                                class="material-symbols-outlined text-base"
-                                                >close</span
+
+                                        <!-- File info -->
+                                        <div class="flex-1 min-w-0">
+                                            <p
+                                                class="text-sm font-medium truncate {item.type ===
+                                                'existing'
+                                                    ? 'text-blue-700 dark:text-blue-400'
+                                                    : 'text-green-700 dark:text-green-400'}"
                                             >
-                                        </button>
+                                                {item.file_name}
+                                            </p>
+                                            <p class="text-[11px] text-slate-400">
+                                                {formatFileSize(item.file_size)}
+                                                {#if item.type === "new"}
+                                                    <span
+                                                        class="ml-1 text-green-500 font-semibold"
+                                                        >• Baru</span
+                                                    >
+                                                {/if}
+                                            </p>
+                                        </div>
+
+                                        <!-- Actions -->
+                                        <div
+                                            class="flex items-center gap-1 shrink-0"
+                                        >
+                                            <!-- Move up -->
+                                            <button
+                                                type="button"
+                                                on:click={() =>
+                                                    moveFile(index, -1)}
+                                                disabled={index === 0}
+                                                class="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                title="Pindah ke atas"
+                                            >
+                                                <span
+                                                    class="material-symbols-outlined"
+                                                    style="font-size: 16px;"
+                                                    >arrow_upward</span
+                                                >
+                                            </button>
+
+                                            <!-- Move down -->
+                                            <button
+                                                type="button"
+                                                on:click={() =>
+                                                    moveFile(index, 1)}
+                                                disabled={index ===
+                                                    fileList.length - 1}
+                                                class="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                title="Pindah ke bawah"
+                                            >
+                                                <span
+                                                    class="material-symbols-outlined"
+                                                    style="font-size: 16px;"
+                                                    >arrow_downward</span
+                                                >
+                                            </button>
+
+                                            <!-- Replace -->
+                                            <label
+                                                class="p-1.5 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/30 text-slate-400 hover:text-amber-600 transition-colors cursor-pointer"
+                                                title="Ganti file ini"
+                                            >
+                                                <span
+                                                    class="material-symbols-outlined"
+                                                    style="font-size: 16px;"
+                                                    >swap_horiz</span
+                                                >
+                                                <input
+                                                    type="file"
+                                                    accept=".pdf,.doc,.docx"
+                                                    on:change={(e) =>
+                                                        replaceFile(index, e)}
+                                                    class="hidden"
+                                                />
+                                            </label>
+
+                                            <!-- Delete -->
+                                            <button
+                                                type="button"
+                                                on:click={() =>
+                                                    removeFile(index)}
+                                                class="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 text-slate-400 hover:text-red-500 transition-colors"
+                                                title="Hapus file ini"
+                                            >
+                                                <span
+                                                    class="material-symbols-outlined"
+                                                    style="font-size: 16px;"
+                                                    >delete</span
+                                                >
+                                            </button>
+                                        </div>
                                     </div>
                                 {/each}
                             </div>
                         {/if}
+
+                        <p class="mt-2 text-xs text-slate-400">
+                            Format: PDF, DOC, DOCX (Maks 50MB per file). Gunakan
+                            tombol ↑↓ untuk mengubah urutan, ⇄ untuk mengganti
+                            file, dan 🗑️ untuk menghapus.
+                        </p>
                     </div>
 
                     <!-- Confirm -->

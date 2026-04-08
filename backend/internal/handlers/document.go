@@ -15,6 +15,7 @@ import (
 	"repository-un/internal/config"
 	"repository-un/internal/middleware"
 	"repository-un/internal/models"
+	"repository-un/internal/utils"
 
 	"github.com/google/uuid"
 )
@@ -87,6 +88,7 @@ func listDocuments(w http.ResponseWriter, r *http.Request) {
 		        COALESCE(d.dosen_pembimbing, '') as dosen_pembimbing,
 		        COALESCE(d.dosen_pembimbing_2, '') as dosen_pembimbing_2,
 		        COALESCE(d.kata_kunci, '') as kata_kunci,
+		        COALESCE(d.tahun, 0) as tahun,
 		        COALESCE(d.view_count, 0) as view_count
 		 FROM documents d
 		 LEFT JOIN fakultas f ON d.fakultas_id = f.id
@@ -117,6 +119,7 @@ func listDocuments(w http.ResponseWriter, r *http.Request) {
 			&d.DosenPembimbing,
 			&d.DosenPembimbing2,
 			&d.KataKunci,
+			&d.Tahun,
 			&d.ViewCount,
 		)
 		if err != nil {
@@ -170,6 +173,7 @@ func getDocumentById(w http.ResponseWriter, r *http.Request, id string) {
 		        COALESCE(d.dosen_pembimbing, '') as dosen_pembimbing,
 		        COALESCE(d.dosen_pembimbing_2, '') as dosen_pembimbing_2,
 		        COALESCE(d.kata_kunci, '') as kata_kunci,
+		        COALESCE(d.tahun, 0) as tahun,
 		        COALESCE(d.view_count, 0) as view_count
 		 FROM documents d
 		 LEFT JOIN fakultas f ON d.fakultas_id = f.id
@@ -189,6 +193,7 @@ func getDocumentById(w http.ResponseWriter, r *http.Request, id string) {
 		&d.DosenPembimbing,
 		&d.DosenPembimbing2,
 		&d.KataKunci,
+		&d.Tahun,
 		&d.ViewCount,
 	)
 
@@ -221,6 +226,13 @@ func createDocument(w http.ResponseWriter, r *http.Request) {
 	dosenPembimbing := r.FormValue("dosen_pembimbing")
 	dosenPembimbing2 := r.FormValue("dosen_pembimbing_2")
 	kataKunci := r.FormValue("kata_kunci")
+	tahunStr := r.FormValue("tahun")
+	tahun := 0
+	if tahunStr != "" {
+		if parsed, err := strconv.Atoi(tahunStr); err == nil {
+			tahun = parsed
+		}
+	}
 
 	if judul == "" || penulis == "" || jenisFile == "" {
 		http.Error(w, "Metadata tidak lengkap (judul, penulis, jenis_file wajib)", http.StatusBadRequest)
@@ -320,14 +332,14 @@ func createDocument(w http.ResponseWriter, r *http.Request) {
 
 	// STEP 1: Insert dokumen ke database DULU (parent record)
 	query := `
-		INSERT INTO documents (id, judul, penulis, abstrak, jenis_file, file_path, status, fakultas_id, prodi_id, dosen_pembimbing, dosen_pembimbing_2, kata_kunci)
+		INSERT INTO documents (id, judul, penulis, abstrak, jenis_file, file_path, status, fakultas_id, prodi_id, dosen_pembimbing, dosen_pembimbing_2, kata_kunci, tahun)
 		VALUES ($1, $2, $3, $4, $5, $6, $7,
 			CASE WHEN $8 = '' THEN NULL ELSE $8::uuid END,
 			CASE WHEN $9 = '' THEN NULL ELSE $9::uuid END,
-			$10, $11, $12)
+			$10, $11, $12, $13)
 	`
 	_, err := config.DB.Exec(context.Background(), query,
-		docID, judul, penulis, abstrak, jenisFile, mainFilePath, status, fakultasID, prodiID, dosenPembimbing, dosenPembimbing2, kataKunci)
+		docID, judul, penulis, abstrak, jenisFile, mainFilePath, status, fakultasID, prodiID, dosenPembimbing, dosenPembimbing2, kataKunci, tahun)
 
 	if err != nil {
 		http.Error(w, "Gagal menyimpan metadata: "+err.Error(), http.StatusInternalServerError)
@@ -378,6 +390,13 @@ func updateDocument(w http.ResponseWriter, r *http.Request, id string) {
 	dosenPembimbing := r.FormValue("dosen_pembimbing")
 	dosenPembimbing2 := r.FormValue("dosen_pembimbing_2")
 	kataKunci := r.FormValue("kata_kunci")
+	tahunStr := r.FormValue("tahun")
+	tahun := 0
+	if tahunStr != "" {
+		if parsed, err := strconv.Atoi(tahunStr); err == nil {
+			tahun = parsed
+		}
+	}
 
 	if judul == "" || penulis == "" || jenisFile == "" {
 		http.Error(w, "Metadata tidak lengkap", http.StatusBadRequest)
@@ -396,73 +415,107 @@ func updateDocument(w http.ResponseWriter, r *http.Request, id string) {
 		    prodi_id = CASE WHEN $7 = '' THEN NULL ELSE $7::uuid END,
 		    dosen_pembimbing = $8,
 		    dosen_pembimbing_2 = $9,
-		    kata_kunci = $10
-		WHERE id = $11
+		    kata_kunci = $10,
+		    tahun = $11
+		WHERE id = $12
 	`
 	_, err := config.DB.Exec(context.Background(), query,
-		judul, penulis, abstrak, jenisFile, status, fakultasID, prodiID, dosenPembimbing, dosenPembimbing2, kataKunci, id)
+		judul, penulis, abstrak, jenisFile, status, fakultasID, prodiID, dosenPembimbing, dosenPembimbing2, kataKunci, tahun, id)
 
 	if err != nil {
 		http.Error(w, "Gagal update dokumen: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Handle new files jika ada
+	// Handle file management
+	// existing_files: JSON array of file IDs to keep with their order, e.g. [{"id":"xxx","order":0},{"id":"yyy","order":2}]
+	// new files uploaded via "files" key, with "new_file_orders" specifying the order for each new file
+	existingFilesJSON := r.FormValue("existing_files")
 	fileLocks := strings.Split(r.FormValue("file_locks"), ",")
-	multiFiles := r.MultipartForm.File["files"]
-	if len(multiFiles) > 0 {
-		// Hapus file lama
-		oldFiles := getDocumentFiles(id)
-		for _, of := range oldFiles {
-			os.Remove(of.FilePath)
-		}
-		config.DB.Exec(context.Background(),
-			`DELETE FROM document_files WHERE document_id = $1`, id)
 
-		// Upload file baru
-		var firstFilePath string
-		for i, fileHeader := range multiFiles {
-			file, err := fileHeader.Open()
-			if err != nil {
-				continue
+	if existingFilesJSON != "" {
+		// Mode baru: kelola file per-item
+		type keepFile struct {
+			ID    string `json:"id"`
+			Order int    `json:"order"`
+		}
+		var keepFiles []keepFile
+		if err := json.Unmarshal([]byte(existingFilesJSON), &keepFiles); err == nil {
+			// Ambil semua file lama
+			oldFiles := getDocumentFiles(id)
+
+			// Buat map file yang dipertahankan
+			keepMap := map[string]int{}
+			for _, kf := range keepFiles {
+				keepMap[kf.ID] = kf.Order
 			}
 
-			ext := filepath.Ext(fileHeader.Filename)
-			storedName := uuid.New().String() + ext
-			filePath := "uploads/" + storedName
+			// Hapus file yang TIDAK ada di keepFiles
+			for _, of := range oldFiles {
+				if _, keep := keepMap[of.ID]; !keep {
+					os.Remove(of.FilePath)
+					config.DB.Exec(context.Background(),
+						`DELETE FROM document_files WHERE id = $1`, of.ID)
+				}
+			}
 
-			dst, err := os.Create(filePath)
-			if err != nil {
+			// Update order untuk file yang dipertahankan
+			for _, kf := range keepFiles {
+				config.DB.Exec(context.Background(),
+					`UPDATE document_files SET file_order = $1 WHERE id = $2`,
+					kf.Order, kf.ID)
+			}
+
+			// Upload file baru jika ada
+			multiFiles := r.MultipartForm.File["files"]
+			newFileOrders := strings.Split(r.FormValue("new_file_orders"), ",")
+			for i, fileHeader := range multiFiles {
+				file, err := fileHeader.Open()
+				if err != nil {
+					continue
+				}
+
+				ext := filepath.Ext(fileHeader.Filename)
+				storedName := uuid.New().String() + ext
+				filePath := "uploads/" + storedName
+
+				dst, err := os.Create(filePath)
+				if err != nil {
+					file.Close()
+					continue
+				}
+
+				io.Copy(dst, file)
+				dst.Close()
 				file.Close()
-				continue
+
+				order := i
+				if i < len(newFileOrders) {
+					if parsed, err := strconv.Atoi(strings.TrimSpace(newFileOrders[i])); err == nil {
+						order = parsed
+					}
+				}
+
+				isLocked := i < len(fileLocks) && fileLocks[i] == "true"
+				fileID := uuid.New()
+				config.DB.Exec(context.Background(),
+					`INSERT INTO document_files (id, document_id, file_name, file_path, file_size, file_order, is_locked)
+					 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+					fileID, id, fileHeader.Filename, filePath, fileHeader.Size, order, isLocked)
 			}
 
-			io.Copy(dst, file)
-			dst.Close()
-			file.Close()
-
-			if i == 0 {
-				firstFilePath = filePath
+			// Update file_path utama dokumen
+			updatedFiles := getDocumentFiles(id)
+			if len(updatedFiles) > 0 {
+				config.DB.Exec(context.Background(),
+					`UPDATE documents SET file_path = $1 WHERE id = $2`, updatedFiles[0].FilePath, id)
 			}
-
-			isLocked := i < len(fileLocks) && fileLocks[i] == "true"
-			fileID := uuid.New()
-			config.DB.Exec(context.Background(),
-				`INSERT INTO document_files (id, document_id, file_name, file_path, file_size, file_order, is_locked)
-				 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-				fileID, id, fileHeader.Filename, filePath, fileHeader.Size, i, isLocked)
-		}
-
-		if firstFilePath != "" {
-			config.DB.Exec(context.Background(),
-				`UPDATE documents SET file_path = $1 WHERE id = $2`, firstFilePath, id)
 		}
 	} else {
-		// Cek single file fallback
-		file, header, err := r.FormFile("file")
-		if err == nil {
-			defer file.Close()
-
+		// Mode lama: jika ada files baru, ganti semua
+		multiFiles := r.MultipartForm.File["files"]
+		if len(multiFiles) > 0 {
+			// Hapus file lama
 			oldFiles := getDocumentFiles(id)
 			for _, of := range oldFiles {
 				os.Remove(of.FilePath)
@@ -470,24 +523,43 @@ func updateDocument(w http.ResponseWriter, r *http.Request, id string) {
 			config.DB.Exec(context.Background(),
 				`DELETE FROM document_files WHERE document_id = $1`, id)
 
-			ext := filepath.Ext(header.Filename)
-			storedName := uuid.New().String() + ext
-			filePath := "uploads/" + storedName
+			// Upload file baru
+			var firstFilePath string
+			for i, fileHeader := range multiFiles {
+				file, err := fileHeader.Open()
+				if err != nil {
+					continue
+				}
 
-			dst, err := os.Create(filePath)
-			if err == nil {
+				ext := filepath.Ext(fileHeader.Filename)
+				storedName := uuid.New().String() + ext
+				filePath := "uploads/" + storedName
+
+				dst, err := os.Create(filePath)
+				if err != nil {
+					file.Close()
+					continue
+				}
+
 				io.Copy(dst, file)
 				dst.Close()
+				file.Close()
 
-				config.DB.Exec(context.Background(),
-					`UPDATE documents SET file_path = $1 WHERE id = $2`, filePath, id)
+				if i == 0 {
+					firstFilePath = filePath
+				}
 
-				isLocked := len(fileLocks) > 0 && fileLocks[0] == "true"
+				isLocked := i < len(fileLocks) && fileLocks[i] == "true"
 				fileID := uuid.New()
 				config.DB.Exec(context.Background(),
 					`INSERT INTO document_files (id, document_id, file_name, file_path, file_size, file_order, is_locked)
 					 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-					fileID, id, header.Filename, filePath, header.Size, 0, isLocked)
+					fileID, id, fileHeader.Filename, filePath, fileHeader.Size, i, isLocked)
+			}
+
+			if firstFilePath != "" {
+				config.DB.Exec(context.Background(),
+					`UPDATE documents SET file_path = $1 WHERE id = $2`, firstFilePath, id)
 			}
 		}
 	}
@@ -541,19 +613,28 @@ func deleteDocument(w http.ResponseWriter, r *http.Request, id string) {
 	w.Write([]byte(`{"message":"Dokumen berhasil dihapus"}`))
 }
 
-// recordDocumentView mencatat view dokumen dan increment view_count
+// recordDocumentView mencatat view dokumen unik per IP per hari
+// Jika IP yang sama sudah melihat dokumen ini hari ini, tidak dihitung lagi
 func recordDocumentView(documentID string, r *http.Request) {
 	ipAddress := r.RemoteAddr
 	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-		ipAddress = strings.Split(forwarded, ",")[0]
+		ipAddress = strings.TrimSpace(strings.Split(forwarded, ",")[0])
 	}
 
+	// Atomic insert: jika sudah ada view dari IP ini hari ini, DO NOTHING
 	viewID := uuid.New()
-	config.DB.Exec(context.Background(),
-		`INSERT INTO document_views (id, document_id, ip_address) VALUES ($1, $2, $3)`,
+	result, err := config.DB.Exec(context.Background(),
+		`INSERT INTO document_views (id, document_id, ip_address)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (document_id, ip_address, (viewed_at::date)) DO NOTHING`,
 		viewID, documentID, ipAddress)
 
-	// Increment view_count cache
+	if err != nil || result.RowsAffected() == 0 {
+		// Error atau sudah pernah melihat hari ini
+		return
+	}
+
+	// Baru pertama kali melihat hari ini, increment view_count
 	config.DB.Exec(context.Background(),
 		`UPDATE documents SET view_count = COALESCE(view_count, 0) + 1 WHERE id = $1`,
 		documentID)
@@ -828,4 +909,43 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 		"jenis_file": "%s",
 		"status": "draft"
 	}`, id, judul, penulis, jenisFile)
+}
+
+// GDriveProxyHandler proxy gambar dari Google Drive agar bisa di-embed di frontend
+// GET /api/gdrive-proxy/{fileId}
+func GDriveProxyHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		middleware.EnableCORS(w)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	middleware.EnableCORS(w)
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	fileID := strings.TrimPrefix(r.URL.Path, "/api/gdrive-proxy/")
+	if fileID == "" {
+		http.Error(w, "File ID tidak valid", http.StatusBadRequest)
+		return
+	}
+
+	// Validasi bahwa fileID terlihat seperti Google Drive ID
+	if !utils.IsGDriveID(fileID) {
+		http.Error(w, "File ID tidak valid", http.StatusBadRequest)
+		return
+	}
+
+	body, mimeType, err := utils.GetGDriveFileContent(fileID)
+	if err != nil {
+		http.Error(w, "Gagal mengambil file: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer body.Close()
+
+	w.Header().Set("Content-Type", mimeType)
+	w.Header().Set("Cache-Control", "public, max-age=86400") // Cache 24 jam
+	io.Copy(w, body)
 }

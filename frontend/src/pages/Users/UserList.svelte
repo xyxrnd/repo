@@ -14,7 +14,7 @@
     let formName = "";
     let formEmail = "";
     let formPassword = "";
-    let formRole = "user";
+    let formRole = "mahasiswa";
     let formError = "";
     let formLoading = false;
 
@@ -41,7 +41,7 @@
         formName = "";
         formEmail = "";
         formPassword = "";
-        formRole = "user";
+        formRole = "mahasiswa";
         formError = "";
         showModal = true;
     }
@@ -412,7 +412,7 @@
                         bind:value={formRole}
                         class="w-full h-11 px-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50"
                     >
-                        <option value="user">User</option>
+                        <option value="mahasiswa">Mahasiswa</option>
                         <option value="admin">Admin</option>
                     </select>
                 </div>

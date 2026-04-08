@@ -131,10 +131,10 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	id := uuid.New().String()
 	now := time.Now()
 
-	// Insert user dengan role default "user"
+	// Insert user dengan role default "admin"
 	_, err = config.DB.Exec(context.Background(),
 		`INSERT INTO users (id, name, email, password, role, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, 'user', $5, $6)`,
+		 VALUES ($1, $2, $3, $4, 'admin', $5, $6)`,
 		id, req.Name, req.Email, string(hashedPassword), now, now,
 	)
 
@@ -144,7 +144,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate JWT token
-	token, err := middleware.GenerateToken(id, req.Email, "user")
+	token, err := middleware.GenerateToken(id, req.Email, "admin")
 	if err != nil {
 		http.Error(w, `{"error":"Failed to generate token"}`, http.StatusInternalServerError)
 		return
@@ -156,7 +156,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 			ID:        id,
 			Name:      req.Name,
 			Email:     req.Email,
-			Role:      "user",
+			Role:      "admin",
 			CreatedAt: now,
 			UpdatedAt: now,
 		},

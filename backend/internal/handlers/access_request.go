@@ -191,6 +191,7 @@ func sendAccessTokenEmail(toEmail, toName, token, documentID, documentTitle stri
 // SendOTPHandler mengirim kode OTP ke email user untuk verifikasi
 // POST /api/send-otp
 // Body: { "email": "xxx", "document_id": "xxx" }
+// document_id bersifat opsional (kosong untuk registrasi mahasiswa)
 func SendOTPHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodOptions {
 		middleware.EnableCORS(w)
@@ -213,16 +214,22 @@ func SendOTPHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if body.Email == "" || body.DocumentID == "" {
-		http.Error(w, "Email dan document_id wajib diisi", http.StatusBadRequest)
+	if body.Email == "" {
+		http.Error(w, "Email wajib diisi", http.StatusBadRequest)
 		return
 	}
 
 	// Rate limiting: cek apakah sudah kirim OTP dalam 1 menit terakhir
 	var recentCount int
-	config.DB.QueryRow(context.Background(),
-		`SELECT COUNT(*) FROM email_otps WHERE email = $1 AND document_id = $2 AND created_at > NOW() - INTERVAL '1 minute'`,
-		body.Email, body.DocumentID).Scan(&recentCount)
+	if body.DocumentID != "" {
+		config.DB.QueryRow(context.Background(),
+			`SELECT COUNT(*) FROM email_otps WHERE email = $1 AND document_id = $2 AND created_at > NOW() - INTERVAL '1 minute'`,
+			body.Email, body.DocumentID).Scan(&recentCount)
+	} else {
+		config.DB.QueryRow(context.Background(),
+			`SELECT COUNT(*) FROM email_otps WHERE email = $1 AND document_id IS NULL AND created_at > NOW() - INTERVAL '1 minute'`,
+			body.Email).Scan(&recentCount)
+	}
 	if recentCount > 0 {
 		http.Error(w, "Kode OTP sudah dikirim. Tunggu 1 menit sebelum mengirim ulang.", http.StatusTooManyRequests)
 		return
@@ -234,14 +241,27 @@ func SendOTPHandler(w http.ResponseWriter, r *http.Request) {
 	expiresAt := time.Now().Add(5 * time.Minute)
 
 	// Hapus OTP lama untuk email + dokumen ini
-	config.DB.Exec(context.Background(),
-		`DELETE FROM email_otps WHERE email = $1 AND document_id = $2`,
-		body.Email, body.DocumentID)
+	if body.DocumentID != "" {
+		config.DB.Exec(context.Background(),
+			`DELETE FROM email_otps WHERE email = $1 AND document_id = $2`,
+			body.Email, body.DocumentID)
+	} else {
+		config.DB.Exec(context.Background(),
+			`DELETE FROM email_otps WHERE email = $1 AND document_id IS NULL`,
+			body.Email)
+	}
 
 	// Simpan OTP baru
-	_, err := config.DB.Exec(context.Background(),
-		`INSERT INTO email_otps (id, email, otp_code, document_id, expires_at) VALUES ($1, $2, $3, $4, $5)`,
-		otpID, body.Email, otpCode, body.DocumentID, expiresAt)
+	var err error
+	if body.DocumentID != "" {
+		_, err = config.DB.Exec(context.Background(),
+			`INSERT INTO email_otps (id, email, otp_code, document_id, expires_at) VALUES ($1, $2, $3, $4, $5)`,
+			otpID, body.Email, otpCode, body.DocumentID, expiresAt)
+	} else {
+		_, err = config.DB.Exec(context.Background(),
+			`INSERT INTO email_otps (id, email, otp_code, document_id, expires_at) VALUES ($1, $2, $3, NULL, $4)`,
+			otpID, body.Email, otpCode, expiresAt)
+	}
 	if err != nil {
 		http.Error(w, "Gagal menyimpan OTP: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -266,6 +286,7 @@ func SendOTPHandler(w http.ResponseWriter, r *http.Request) {
 // VerifyOTPHandler memverifikasi kode OTP yang dimasukkan user
 // POST /api/verify-otp
 // Body: { "email": "xxx", "document_id": "xxx", "otp_code": "xxx" }
+// document_id bersifat opsional (kosong untuk registrasi mahasiswa)
 func VerifyOTPHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodOptions {
 		middleware.EnableCORS(w)
@@ -289,19 +310,29 @@ func VerifyOTPHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if body.Email == "" || body.DocumentID == "" || body.OTPCode == "" {
-		http.Error(w, "Email, document_id, dan otp_code wajib diisi", http.StatusBadRequest)
+	if body.Email == "" || body.OTPCode == "" {
+		http.Error(w, "Email dan otp_code wajib diisi", http.StatusBadRequest)
 		return
 	}
 
 	// Cari OTP yang cocok dan belum expired
 	var otpID string
-	err := config.DB.QueryRow(context.Background(),
-		`SELECT id FROM email_otps
-		 WHERE email = $1 AND document_id = $2 AND otp_code = $3
-		   AND is_verified = false AND expires_at > NOW()
-		 LIMIT 1`,
-		body.Email, body.DocumentID, body.OTPCode).Scan(&otpID)
+	var err error
+	if body.DocumentID != "" {
+		err = config.DB.QueryRow(context.Background(),
+			`SELECT id FROM email_otps
+			 WHERE email = $1 AND document_id = $2 AND otp_code = $3
+			   AND is_verified = false AND expires_at > NOW()
+			 LIMIT 1`,
+			body.Email, body.DocumentID, body.OTPCode).Scan(&otpID)
+	} else {
+		err = config.DB.QueryRow(context.Background(),
+			`SELECT id FROM email_otps
+			 WHERE email = $1 AND document_id IS NULL AND otp_code = $2
+			   AND is_verified = false AND expires_at > NOW()
+			 LIMIT 1`,
+			body.Email, body.OTPCode).Scan(&otpID)
+	}
 
 	if err != nil {
 		http.Error(w, "Kode OTP tidak valid atau sudah kedaluwarsa.", http.StatusUnauthorized)
@@ -461,13 +492,26 @@ func createAccessRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validasi bahwa email sudah diverifikasi via OTP
-	var verifiedCount int
-	config.DB.QueryRow(context.Background(),
-		`SELECT COUNT(*) FROM email_otps WHERE email = $1 AND document_id = $2 AND is_verified = true AND expires_at > NOW() - INTERVAL '10 minutes'`,
-		email, documentID).Scan(&verifiedCount)
-	if verifiedCount == 0 {
-		http.Error(w, "Email belum diverifikasi. Silakan verifikasi email terlebih dahulu.", http.StatusForbidden)
-		return
+	// Mahasiswa yang sudah login bisa skip OTP (email sudah diverifikasi saat registrasi)
+	skipOTP := false
+	authHeader := r.Header.Get("Authorization")
+	if authHeader != "" {
+		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
+		claims, err := middleware.ValidateToken(tokenStr)
+		if err == nil && claims.Role == "mahasiswa" {
+			skipOTP = true
+		}
+	}
+
+	if !skipOTP {
+		var verifiedCount int
+		config.DB.QueryRow(context.Background(),
+			`SELECT COUNT(*) FROM email_otps WHERE email = $1 AND document_id = $2 AND is_verified = true AND expires_at > NOW() - INTERVAL '10 minutes'`,
+			email, documentID).Scan(&verifiedCount)
+		if verifiedCount == 0 {
+			http.Error(w, "Email belum diverifikasi. Silakan verifikasi email terlebih dahulu.", http.StatusForbidden)
+			return
+		}
 	}
 
 	// Validasi bahwa dokumen memiliki file yang terkunci

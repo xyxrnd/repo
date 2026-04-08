@@ -20,9 +20,9 @@
 </script>
 
 <aside
-    class="w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col h-full shrink-0"
+    class="w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col h-screen shrink-0 overflow-hidden"
 >
-    <div class="p-6 flex flex-col gap-6">
+    <div class="p-6 flex-1 flex flex-col gap-6 overflow-y-auto">
         <!-- Brand -->
         <div class="flex items-center gap-3">
             <div
@@ -177,7 +177,7 @@
         </nav>
     </div>
 
-    <div class="mt-auto p-6 border-t border-slate-200 dark:border-slate-800">
+    <div class="shrink-0 p-6 border-t border-slate-200 dark:border-slate-800">
         {#if user}
             <div class="flex items-center gap-3 px-2">
                 <div
