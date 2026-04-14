@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"repository-un/internal/config"
 	"repository-un/internal/middleware"
 	"repository-un/internal/models"
+	"repository-un/internal/utils"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -270,6 +272,29 @@ func deleteUser(w http.ResponseWriter, r *http.Request, id string) {
 	if currentUserID == id {
 		http.Error(w, `{"error":"Cannot delete your own account"}`, http.StatusForbidden)
 		return
+	}
+
+	// Ambil email user untuk mencari data registrasi & KTM
+	var userEmail string
+	config.DB.QueryRow(context.Background(),
+		`SELECT email FROM users WHERE id = $1`, id).Scan(&userEmail)
+
+	// Hapus file KTM dari Google Drive jika ada data registrasi
+	if userEmail != "" {
+		var ktmPath string
+		config.DB.QueryRow(context.Background(),
+			`SELECT COALESCE(ktm_path, '') FROM student_registrations WHERE email = $1`, userEmail).Scan(&ktmPath)
+		if ktmPath != "" && utils.IsGDriveID(ktmPath) {
+			if err := utils.DeleteFromGDrive(ktmPath); err != nil {
+				fmt.Printf("⚠️ Gagal hapus KTM dari Google Drive: %v\n", err)
+			} else {
+				fmt.Printf("✅ KTM berhasil dihapus dari Google Drive (user: %s)\n", userEmail)
+			}
+		}
+
+		// Hapus data registrasi mahasiswa
+		config.DB.Exec(context.Background(),
+			`DELETE FROM student_registrations WHERE email = $1`, userEmail)
 	}
 
 	result, err := config.DB.Exec(context.Background(),

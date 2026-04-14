@@ -212,7 +212,7 @@ func getDocumentById(w http.ResponseWriter, r *http.Request, id string) {
 	json.NewEncoder(w).Encode(d)
 }
 
-// createDocument membuat dokumen baru dengan upload multiple files
+// createDocument membuat dokumen baru — file disimpan lokal dulu, lalu upload ke Google Drive di background
 func createDocument(w http.ResponseWriter, r *http.Request) {
 	r.ParseMultipartForm(100 << 20) // 100 MB max
 
@@ -243,7 +243,7 @@ func createDocument(w http.ResponseWriter, r *http.Request) {
 		status = "draft"
 	}
 
-	// Pastikan folder uploads ada
+	// Pastikan folder uploads ada (untuk penyimpanan sementara)
 	os.MkdirAll("uploads", os.ModePerm)
 
 	docID := uuid.New()
@@ -251,13 +251,13 @@ func createDocument(w http.ResponseWriter, r *http.Request) {
 	// Parse lock info per file (comma-separated: "true,false,true")
 	fileLocks := strings.Split(r.FormValue("file_locks"), ",")
 
-	// Handle multiple files — simpan ke disk dulu, kumpulkan metadata
+	// STEP 1: Simpan file ke LOKAL dulu (agar response cepat)
 	type savedFile struct {
-		FileName string
-		FilePath string
-		FileSize int64
-		Order    int
-		IsLocked bool
+		FileName  string
+		LocalPath string // path lokal sementara
+		FileSize  int64
+		Order     int
+		IsLocked  bool
 	}
 
 	var mainFilePath string
@@ -275,9 +275,9 @@ func createDocument(w http.ResponseWriter, r *http.Request) {
 
 		ext := filepath.Ext(header.Filename)
 		storedName := uuid.New().String() + ext
-		mainFilePath = "uploads/" + storedName
+		localPath := "uploads/" + storedName
 
-		dst, err := os.Create(mainFilePath)
+		dst, err := os.Create(localPath)
 		if err != nil {
 			http.Error(w, "Gagal menyimpan file", http.StatusInternalServerError)
 			return
@@ -285,16 +285,17 @@ func createDocument(w http.ResponseWriter, r *http.Request) {
 		defer dst.Close()
 		io.Copy(dst, file)
 
+		mainFilePath = localPath
 		isLocked := len(fileLocks) > 0 && fileLocks[0] == "true"
 		savedFiles = append(savedFiles, savedFile{
-			FileName: header.Filename,
-			FilePath: mainFilePath,
-			FileSize: header.Size,
-			Order:    0,
-			IsLocked: isLocked,
+			FileName:  header.Filename,
+			LocalPath: localPath,
+			FileSize:  header.Size,
+			Order:     0,
+			IsLocked:  isLocked,
 		})
 	} else {
-		// Multiple files — simpan ke disk
+		// Multiple files — simpan ke lokal
 		for i, fileHeader := range multiFiles {
 			file, err := fileHeader.Open()
 			if err != nil {
@@ -303,9 +304,9 @@ func createDocument(w http.ResponseWriter, r *http.Request) {
 
 			ext := filepath.Ext(fileHeader.Filename)
 			storedName := uuid.New().String() + ext
-			filePath := "uploads/" + storedName
+			localPath := "uploads/" + storedName
 
-			dst, err := os.Create(filePath)
+			dst, err := os.Create(localPath)
 			if err != nil {
 				file.Close()
 				continue
@@ -316,21 +317,21 @@ func createDocument(w http.ResponseWriter, r *http.Request) {
 			file.Close()
 
 			if i == 0 {
-				mainFilePath = filePath
+				mainFilePath = localPath
 			}
 
 			isLocked := i < len(fileLocks) && fileLocks[i] == "true"
 			savedFiles = append(savedFiles, savedFile{
-				FileName: fileHeader.Filename,
-				FilePath: filePath,
-				FileSize: fileHeader.Size,
-				Order:    i,
-				IsLocked: isLocked,
+				FileName:  fileHeader.Filename,
+				LocalPath: localPath,
+				FileSize:  fileHeader.Size,
+				Order:     i,
+				IsLocked:  isLocked,
 			})
 		}
 	}
 
-	// STEP 1: Insert dokumen ke database DULU (parent record)
+	// STEP 2: Insert dokumen ke database dengan path lokal (response cepat)
 	query := `
 		INSERT INTO documents (id, judul, penulis, abstrak, jenis_file, file_path, status, fakultas_id, prodi_id, dosen_pembimbing, dosen_pembimbing_2, kata_kunci, tahun)
 		VALUES ($1, $2, $3, $4, $5, $6, $7,
@@ -346,16 +347,29 @@ func createDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// STEP 2: Setelah dokumen ada, baru insert file-file ke document_files
+	// STEP 3: Insert file records ke document_files dengan path lokal
+	type fileRecord struct {
+		DbFileID  string
+		LocalPath string
+		FileName  string
+	}
+	var fileRecords []fileRecord
+
 	for _, sf := range savedFiles {
-		fileID := uuid.New()
+		dbFileID := uuid.New().String()
 		config.DB.Exec(context.Background(),
 			`INSERT INTO document_files (id, document_id, file_name, file_path, file_size, file_order, is_locked)
 			 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-			fileID, docID, sf.FileName, sf.FilePath, sf.FileSize, sf.Order, sf.IsLocked)
+			dbFileID, docID, sf.FileName, sf.LocalPath, sf.FileSize, sf.Order, sf.IsLocked)
+
+		fileRecords = append(fileRecords, fileRecord{
+			DbFileID:  dbFileID,
+			LocalPath: sf.LocalPath,
+			FileName:  sf.FileName,
+		})
 	}
 
-	// Response
+	// STEP 4: Response langsung ke user (tidak menunggu upload GDrive)
 	doc := models.Document{
 		ID:               docID.String(),
 		Judul:            judul,
@@ -374,6 +388,64 @@ func createDocument(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(doc)
+
+	// STEP 5: Upload ke Google Drive di BACKGROUND (async)
+	go func() {
+		// Resolve nama fakultas dan prodi
+		var fakultasNama, prodiNama string
+		if fakultasID != "" {
+			config.DB.QueryRow(context.Background(),
+				`SELECT COALESCE(nama, '') FROM fakultas WHERE id = $1`, fakultasID).Scan(&fakultasNama)
+		}
+		if prodiID != "" {
+			config.DB.QueryRow(context.Background(),
+				`SELECT COALESCE(nama, '') FROM prodi WHERE id = $1`, prodiID).Scan(&prodiNama)
+		}
+
+		// Buat folder hierarchy di Google Drive
+		gdriveFolderID, err := utils.GetDocumentFolderID(fakultasNama, prodiNama, tahun, penulis)
+		if err != nil {
+			fmt.Printf("⚠️ [Background] Gagal membuat folder GDrive untuk doc %s: %v\n", docID, err)
+			return
+		}
+
+		fmt.Printf("📤 [Background] Mulai upload %d file ke Google Drive untuk dokumen '%s'...\n", len(fileRecords), judul)
+
+		for _, fr := range fileRecords {
+			// Buka file lokal
+			localFile, err := os.Open(fr.LocalPath)
+			if err != nil {
+				fmt.Printf("⚠️ [Background] Gagal membuka file lokal %s: %v\n", fr.LocalPath, err)
+				continue
+			}
+
+			// Upload ke Google Drive
+			uploadResult, err := utils.UploadToGDriveFolder(localFile, fr.FileName, gdriveFolderID)
+			localFile.Close()
+			if err != nil {
+				fmt.Printf("⚠️ [Background] Gagal upload '%s' ke GDrive: %v\n", fr.FileName, err)
+				continue
+			}
+
+			// Update database: ganti path lokal → GDrive file ID
+			config.DB.Exec(context.Background(),
+				`UPDATE document_files SET file_path = $1 WHERE id = $2`,
+				uploadResult.FileID, fr.DbFileID)
+
+			// Update main file_path juga jika ini file pertama
+			if fr.LocalPath == mainFilePath {
+				config.DB.Exec(context.Background(),
+					`UPDATE documents SET file_path = $1 WHERE id = $2`,
+					uploadResult.FileID, docID)
+			}
+
+			// Hapus file lokal setelah berhasil upload ke GDrive
+			os.Remove(fr.LocalPath)
+			fmt.Printf("✅ [Background] '%s' berhasil diupload ke GDrive & file lokal dihapus\n", fr.FileName)
+		}
+
+		fmt.Printf("✅ [Background] Semua file dokumen '%s' selesai diupload ke Google Drive\n", judul)
+	}()
 }
 
 // updateDocument mengupdate dokumen
@@ -428,10 +500,25 @@ func updateDocument(w http.ResponseWriter, r *http.Request, id string) {
 	}
 
 	// Handle file management
-	// existing_files: JSON array of file IDs to keep with their order, e.g. [{"id":"xxx","order":0},{"id":"yyy","order":2}]
-	// new files uploaded via "files" key, with "new_file_orders" specifying the order for each new file
 	existingFilesJSON := r.FormValue("existing_files")
 	fileLocks := strings.Split(r.FormValue("file_locks"), ",")
+
+	// Resolve nama fakultas dan prodi untuk folder Google Drive
+	var fakultasNama, prodiNama string
+	if fakultasID != "" {
+		config.DB.QueryRow(context.Background(),
+			`SELECT COALESCE(nama, '') FROM fakultas WHERE id = $1`, fakultasID).Scan(&fakultasNama)
+	}
+	if prodiID != "" {
+		config.DB.QueryRow(context.Background(),
+			`SELECT COALESCE(nama, '') FROM prodi WHERE id = $1`, prodiID).Scan(&prodiNama)
+	}
+
+	// Dapatkan folder ID di Google Drive
+	gdriveFolderID, gdriveErr := utils.GetDocumentFolderID(fakultasNama, prodiNama, tahun, penulis)
+	if gdriveErr != nil {
+		fmt.Printf("⚠️ Gagal membuat folder hierarchy di Google Drive: %v\n", gdriveErr)
+	}
 
 	if existingFilesJSON != "" {
 		// Mode baru: kelola file per-item
@@ -441,10 +528,8 @@ func updateDocument(w http.ResponseWriter, r *http.Request, id string) {
 		}
 		var keepFiles []keepFile
 		if err := json.Unmarshal([]byte(existingFilesJSON), &keepFiles); err == nil {
-			// Ambil semua file lama
 			oldFiles := getDocumentFiles(id)
 
-			// Buat map file yang dipertahankan
 			keepMap := map[string]int{}
 			for _, kf := range keepFiles {
 				keepMap[kf.ID] = kf.Order
@@ -453,20 +538,23 @@ func updateDocument(w http.ResponseWriter, r *http.Request, id string) {
 			// Hapus file yang TIDAK ada di keepFiles
 			for _, of := range oldFiles {
 				if _, keep := keepMap[of.ID]; !keep {
-					os.Remove(of.FilePath)
+					if utils.IsGDriveID(of.FilePath) {
+						utils.DeleteFromGDrive(of.FilePath)
+					} else {
+						os.Remove(of.FilePath)
+					}
 					config.DB.Exec(context.Background(),
 						`DELETE FROM document_files WHERE id = $1`, of.ID)
 				}
 			}
 
-			// Update order untuk file yang dipertahankan
 			for _, kf := range keepFiles {
 				config.DB.Exec(context.Background(),
 					`UPDATE document_files SET file_order = $1 WHERE id = $2`,
 					kf.Order, kf.ID)
 			}
 
-			// Upload file baru jika ada
+			// Upload file baru ke Google Drive
 			multiFiles := r.MultipartForm.File["files"]
 			newFileOrders := strings.Split(r.FormValue("new_file_orders"), ",")
 			for i, fileHeader := range multiFiles {
@@ -475,19 +563,19 @@ func updateDocument(w http.ResponseWriter, r *http.Request, id string) {
 					continue
 				}
 
-				ext := filepath.Ext(fileHeader.Filename)
-				storedName := uuid.New().String() + ext
-				filePath := "uploads/" + storedName
-
-				dst, err := os.Create(filePath)
-				if err != nil {
+				var filePath string
+				if gdriveFolderID != "" {
+					uploadResult, err := utils.UploadToGDriveFolder(file, fileHeader.Filename, gdriveFolderID)
+					file.Close()
+					if err != nil {
+						fmt.Printf("⚠️ Gagal upload file '%s' ke Google Drive: %v\n", fileHeader.Filename, err)
+						continue
+					}
+					filePath = uploadResult.FileID
+				} else {
 					file.Close()
 					continue
 				}
-
-				io.Copy(dst, file)
-				dst.Close()
-				file.Close()
 
 				order := i
 				if i < len(newFileOrders) {
@@ -504,7 +592,6 @@ func updateDocument(w http.ResponseWriter, r *http.Request, id string) {
 					fileID, id, fileHeader.Filename, filePath, fileHeader.Size, order, isLocked)
 			}
 
-			// Update file_path utama dokumen
 			updatedFiles := getDocumentFiles(id)
 			if len(updatedFiles) > 0 {
 				config.DB.Exec(context.Background(),
@@ -515,15 +602,17 @@ func updateDocument(w http.ResponseWriter, r *http.Request, id string) {
 		// Mode lama: jika ada files baru, ganti semua
 		multiFiles := r.MultipartForm.File["files"]
 		if len(multiFiles) > 0 {
-			// Hapus file lama
 			oldFiles := getDocumentFiles(id)
 			for _, of := range oldFiles {
-				os.Remove(of.FilePath)
+				if utils.IsGDriveID(of.FilePath) {
+					utils.DeleteFromGDrive(of.FilePath)
+				} else {
+					os.Remove(of.FilePath)
+				}
 			}
 			config.DB.Exec(context.Background(),
 				`DELETE FROM document_files WHERE document_id = $1`, id)
 
-			// Upload file baru
 			var firstFilePath string
 			for i, fileHeader := range multiFiles {
 				file, err := fileHeader.Open()
@@ -531,19 +620,19 @@ func updateDocument(w http.ResponseWriter, r *http.Request, id string) {
 					continue
 				}
 
-				ext := filepath.Ext(fileHeader.Filename)
-				storedName := uuid.New().String() + ext
-				filePath := "uploads/" + storedName
-
-				dst, err := os.Create(filePath)
-				if err != nil {
+				var filePath string
+				if gdriveFolderID != "" {
+					uploadResult, err := utils.UploadToGDriveFolder(file, fileHeader.Filename, gdriveFolderID)
+					file.Close()
+					if err != nil {
+						fmt.Printf("⚠️ Gagal upload file '%s' ke Google Drive: %v\n", fileHeader.Filename, err)
+						continue
+					}
+					filePath = uploadResult.FileID
+				} else {
 					file.Close()
 					continue
 				}
-
-				io.Copy(dst, file)
-				dst.Close()
-				file.Close()
 
 				if i == 0 {
 					firstFilePath = filePath
@@ -580,20 +669,30 @@ func updateDocument(w http.ResponseWriter, r *http.Request, id string) {
 	})
 }
 
-// deleteDocument menghapus dokumen dan file-filenya
+// deleteDocument menghapus dokumen dan file-filenya (dari Google Drive atau lokal)
 func deleteDocument(w http.ResponseWriter, r *http.Request, id string) {
-	// Hapus semua file fisik
+	// Hapus semua file (Google Drive atau lokal)
 	files := getDocumentFiles(id)
 	for _, f := range files {
-		os.Remove(f.FilePath)
+		if utils.IsGDriveID(f.FilePath) {
+			if err := utils.DeleteFromGDrive(f.FilePath); err != nil {
+				fmt.Printf("⚠️ Gagal hapus file dari Google Drive: %v\n", err)
+			}
+		} else {
+			os.Remove(f.FilePath)
+		}
 	}
 
-	// Hapus juga file_path lama
+	// Hapus juga file_path lama (jika berbeda dari document_files)
 	var filePath string
 	config.DB.QueryRow(context.Background(),
 		`SELECT COALESCE(file_path, '') FROM documents WHERE id = $1`, id).Scan(&filePath)
 	if filePath != "" {
-		os.Remove(filePath)
+		if utils.IsGDriveID(filePath) {
+			utils.DeleteFromGDrive(filePath)
+		} else {
+			os.Remove(filePath)
+		}
 	}
 
 	// document_files otomatis terhapus karena ON DELETE CASCADE
@@ -748,6 +847,22 @@ func DownloadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Jika file di Google Drive, download dari sana
+	if utils.IsGDriveID(fp) {
+		body, mimeType, err := utils.GetGDriveFileContent(fp)
+		if err != nil {
+			http.Error(w, "Gagal mengambil file dari Google Drive: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer body.Close()
+
+		w.Header().Set("Content-Type", mimeType)
+		w.Header().Set("Content-Disposition", "attachment")
+		io.Copy(w, body)
+		return
+	}
+
+	// File lokal (legacy)
 	w.Header().Set("Content-Disposition", "attachment")
 	http.ServeFile(w, r, fp)
 }
@@ -793,6 +908,18 @@ func DownloadAllHandler(w http.ResponseWriter, r *http.Request) {
 		config.DB.QueryRow(context.Background(),
 			`SELECT COALESCE(file_path, '') FROM documents WHERE id = $1`, id).Scan(&fp)
 		if fp != "" {
+			if utils.IsGDriveID(fp) {
+				body, mimeType, err := utils.GetGDriveFileContent(fp)
+				if err != nil {
+					http.Error(w, "Gagal mengambil file dari Google Drive", http.StatusInternalServerError)
+					return
+				}
+				defer body.Close()
+				w.Header().Set("Content-Type", mimeType)
+				w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.pdf"`, judul))
+				io.Copy(w, body)
+				return
+			}
 			w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.pdf"`, judul))
 			http.ServeFile(w, r, fp)
 			return
@@ -801,15 +928,26 @@ func DownloadAllHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Jika hanya 1 file, langsung download file tersebut tanpa ZIP
+	// Jika hanya 1 file, langsung download
 	if len(files) == 1 {
+		if utils.IsGDriveID(files[0].FilePath) {
+			body, mimeType, err := utils.GetGDriveFileContent(files[0].FilePath)
+			if err != nil {
+				http.Error(w, "Gagal mengambil file dari Google Drive", http.StatusInternalServerError)
+				return
+			}
+			defer body.Close()
+			w.Header().Set("Content-Type", mimeType)
+			w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, files[0].FileName))
+			io.Copy(w, body)
+			return
+		}
 		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, files[0].FileName))
 		http.ServeFile(w, r, files[0].FilePath)
 		return
 	}
 
 	// Multiple files: buat ZIP
-	// Bersihkan nama file untuk ZIP
 	safeJudul := strings.ReplaceAll(judul, " ", "_")
 	safeJudul = strings.ReplaceAll(safeJudul, "/", "_")
 	zipFileName := safeJudul + ".zip"
@@ -822,22 +960,35 @@ func DownloadAllHandler(w http.ResponseWriter, r *http.Request) {
 	defer zipWriter.Close()
 
 	for _, file := range files {
-		// Buka file dari disk
-		f, err := os.Open(file.FilePath)
-		if err != nil {
-			continue // Skip file yang tidak bisa dibuka
+		var reader io.ReadCloser
+
+		if utils.IsGDriveID(file.FilePath) {
+			// Download dari Google Drive
+			body, _, err := utils.GetGDriveFileContent(file.FilePath)
+			if err != nil {
+				fmt.Printf("⚠️ Gagal download file dari GDrive untuk ZIP: %v\n", err)
+				continue
+			}
+			reader = body
+		} else {
+			// Buka file dari disk (legacy)
+			f, err := os.Open(file.FilePath)
+			if err != nil {
+				continue
+			}
+			reader = f
 		}
 
 		// Buat entry di ZIP dengan nama file asli
 		zEntry, err := zipWriter.Create(file.FileName)
 		if err != nil {
-			f.Close()
+			reader.Close()
 			continue
 		}
 
 		// Copy isi file ke ZIP
-		io.Copy(zEntry, f)
-		f.Close()
+		io.Copy(zEntry, reader)
+		reader.Close()
 	}
 }
 

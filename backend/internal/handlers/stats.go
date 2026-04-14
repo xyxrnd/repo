@@ -20,6 +20,7 @@ type StatsResponse struct {
 	TotalAuthors   int `json:"total_authors"`
 	TotalVisitors  int `json:"total_visitors"`
 	TodayVisitors  int `json:"today_visitors"`
+	TotalUsers     int `json:"total_users"`
 }
 
 // StatsHandler menangani request statistik publik
@@ -67,6 +68,13 @@ func StatsHandler(w http.ResponseWriter, r *http.Request) {
 		`SELECT COUNT(*) FROM site_visits WHERE visited_at::date = CURRENT_DATE`).Scan(&stats.TodayVisitors)
 	if err != nil {
 		stats.TodayVisitors = 0
+	}
+
+	// Total pengguna aktif (dari tabel users)
+	err = config.DB.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM users`).Scan(&stats.TotalUsers)
+	if err != nil {
+		stats.TotalUsers = 0
 	}
 
 	w.Header().Set("Content-Type", "application/json")

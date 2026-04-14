@@ -72,6 +72,21 @@
         }
     }
 
+    // Helper: cek apakah file_path adalah Google Drive ID (bukan path lokal)
+    function isGDriveId(path) {
+        if (!path) return false;
+        return !path.includes('/') && !path.includes('\\') && !path.includes('.');
+    }
+
+    // Helper: dapatkan URL file yang benar
+    function getFileUrl(filePath) {
+        if (!filePath) return '#';
+        if (isGDriveId(filePath)) {
+            return `${API_BASE_URL}/api/gdrive-proxy/${filePath}`;
+        }
+        return `${API_BASE_URL}/${filePath}`;
+    }
+
     function handleDownload() {
         // Download semua file dalam ZIP via endpoint download-all
         window.open(API_ENDPOINTS.DOCUMENT_DOWNLOAD_ALL(doc.id), "_blank");
@@ -86,7 +101,7 @@
             }
             return;
         }
-        window.open(`${API_BASE_URL}/${file.file_path}`, "_blank");
+        window.open(getFileUrl(file.file_path), "_blank");
     }
 
     function handleFilePreview(file) {
@@ -98,7 +113,7 @@
             }
             return;
         }
-        window.open(`${API_BASE_URL}/${file.file_path}`, "_blank");
+        window.open(getFileUrl(file.file_path), "_blank");
     }
 
     // Variabel untuk menyimpan email tersensor sebagai placeholder hint untuk mahasiswa
@@ -316,7 +331,7 @@
     function handleUnlockedPreview(fileId) {
         const info = unlockedFiles[fileId];
         if (info) {
-            window.open(`${API_BASE_URL}/${info.file_path}`, "_blank");
+            window.open(getFileUrl(info.file_path), "_blank");
         }
     }
 
@@ -324,7 +339,7 @@
         const info = unlockedFiles[fileId];
         if (info) {
             const link = document.createElement("a");
-            link.href = `${API_BASE_URL}/${info.file_path}`;
+            link.href = getFileUrl(info.file_path);
             link.download = info.file_name;
             link.click();
         }

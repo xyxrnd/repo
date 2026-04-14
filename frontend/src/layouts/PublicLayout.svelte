@@ -119,12 +119,6 @@
                     >
                         <span class="truncate">Login</span>
                     </a>
-                    <a
-                        href="#/register"
-                        class="flex min-w-[84px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-6 bg-primary hover:bg-primary/90 text-white text-sm font-bold leading-normal tracking-[0.015em] transition-all shadow-lg shadow-primary/25"
-                    >
-                        <span class="truncate">Sign Up</span>
-                    </a>
                 {/if}
             </div>
         </div>
@@ -217,13 +211,6 @@
                             class="flex-1 flex items-center justify-center py-2.5 bg-slate-200 dark:bg-[#233648] hover:bg-slate-300 dark:hover:bg-[#2f455a] text-slate-900 dark:text-white text-sm font-bold rounded-lg transition-all"
                         >
                             Login
-                        </a>
-                        <a
-                            href="#/register"
-                            on:click={closeMobileMenu}
-                            class="flex-1 flex items-center justify-center py-2.5 bg-primary hover:bg-primary/90 text-white text-sm font-bold rounded-lg transition-all shadow-lg shadow-primary/25"
-                        >
-                            Sign Up
                         </a>
                     </div>
                 {/if}

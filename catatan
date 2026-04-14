@@ -1,47 +1,5 @@
-
-
-Thought for 26s
-
-
-
-
-
-
-
-
-Masalah ini terjadi karena Google menghapus storage quota untuk service account — bahkan upload ke folder yang di-share pun tidak bisa. Solusinya: gunakan OAuth2 dengan refresh token (pakai quota akun Google Anda).
-
-Mari saya cek dulu setup Anda:
-
-Analyzed
-.env#L1-31
-Searched
-godotenv
-6 results
-Oke, 
-.env
- sudah benar dan godotenv diload. Masalahnya memang kebijakan Google — service account tidak punya storage quota lagi.
-
-Solusinya: ubah strategi upload agar menggunakan OAuth2 refresh token dari akun Google pribadi Anda (yang punya 15GB quota). Ini memerlukan beberapa langkah:
-
-Langkah 1: Buat OAuth2 Credentials di Google Cloud Console
-Buka Google Cloud Console - Credentials
-Klik "+ CREATE CREDENTIALS" → "OAuth client ID"
-Application type: "Desktop app"
-Name: KTM Upload
-Klik Create
-Copy Client ID dan Client Secret yang muncul
-Tambahkan ke 
-.env
- Anda:
-GDRIVE_CLIENT_ID=<paste client id>
-GDRIVE_CLIENT_SECRET=<paste client secret>
-⚠️ Jika muncul pesan "OAuth consent screen required", klik configure dulu → pilih External → isi App Name, email → save → lalu kembali buat credentials.
-
-Langkah 2: Saya siapkan tool untuk mendapatkan refresh token
-Saya akan buat utility CLI yang bisa Anda jalankan sekali untuk mendapatkan refresh token:
-
-Created
-main.go
-+71
--0
+1. ubah permintaan akses menjadi hanya login saja, jika mahasiswa sudah memiliki akun maka mahasiswa tersebut login dan langsung dapat mengakses semua dokument yang terkunci, namun jika mahasiswa belum memiliki akun maka mahasiswa tersebut harus membuat akun terlebih dahulu
+2. fitur daftar otomatis membaca informasi dari ktm seperti nama, fakultas, prodi, dan npm
+3. fitur download all menjadi hanya ketika user sudah login, ketika belum login maka fitur tersebut tidak ada
+4. tambahkan input npm pada halaman upload file
+5. 

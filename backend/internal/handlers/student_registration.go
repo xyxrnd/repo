@@ -100,7 +100,9 @@ func StudentSignupHandler(w http.ResponseWriter, r *http.Request) {
 	uploadResult, err := utils.UploadToGDrive(ktmFile, fileName)
 	if err != nil {
 		fmt.Printf("⚠️ Gagal upload KTM ke Google Drive: %v\n", err)
-		http.Error(w, `{"error":"Gagal mengupload file KTM: `+err.Error()+`"}`, http.StatusInternalServerError)
+		// Reset service agar bisa retry dengan token baru
+		utils.ResetDriveService()
+		http.Error(w, `{"error":"Gagal mengupload file KTM. Silakan coba lagi nanti."}`, http.StatusInternalServerError)
 		return
 	}
 	ktmPath = uploadResult.FileID // Simpan Google Drive file ID

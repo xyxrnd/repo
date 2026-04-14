@@ -3,6 +3,7 @@
     import { link } from "svelte-spa-router";
     import authService from "../../services/authService";
     import { getDocuments } from "../../services/documentService";
+    import { API_ENDPOINTS } from "../../config/index.js";
 
     let user = null;
     let documents = [];
@@ -13,6 +14,7 @@
     let totalDocs = 0;
     let publishedDocs = 0;
     let draftDocs = 0;
+    let totalUsers = 0;
     let recentDocs = [];
 
     onMount(() => {
@@ -30,6 +32,7 @@
     async function loadData() {
         try {
             loading = true;
+            // Fetch documents
             documents = await getDocuments();
             totalDocs = documents.length;
             publishedDocs = documents.filter(
@@ -37,6 +40,20 @@
             ).length;
             draftDocs = documents.filter((d) => d.status === "draft").length;
             recentDocs = documents.slice(0, 5);
+
+            // Fetch stats (termasuk total_users)
+            try {
+                const token = authService.getToken();
+                const res = await fetch(API_ENDPOINTS.STATS, {
+                    headers: token ? { Authorization: `Bearer ${token}` } : {},
+                });
+                if (res.ok) {
+                    const stats = await res.json();
+                    totalUsers = stats.total_users || 0;
+                }
+            } catch (e) {
+                console.error("Failed to load stats:", e);
+            }
         } catch (e) {
             console.error("Failed to load data:", e);
         } finally {
@@ -283,7 +300,7 @@
                         <span
                             class="text-3xl font-black text-slate-900 dark:text-white"
                         >
-                            24
+                            {totalUsers}
                         </span>
                     {/if}
                 </div>
