@@ -9,6 +9,9 @@ type StudentRegistration struct {
 	Email     string    `json:"email"`
 	Password  string    `json:"-"` // Hidden from JSON
 	KtmPath   string    `json:"ktm_path"`
+	NPM       string    `json:"npm"`
+	Fakultas  string    `json:"fakultas"`
+	Prodi     string    `json:"prodi"`
 	Status    string    `json:"status"` // "pending", "approved", "rejected"
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

@@ -80,7 +80,7 @@ func DocumentByIdHandler(w http.ResponseWriter, r *http.Request) {
 // listDocuments mengambil semua dokumen dari database beserta fakultas, prodi, dan files
 func listDocuments(w http.ResponseWriter, r *http.Request) {
 	rows, err := config.DB.Query(context.Background(),
-		`SELECT d.id, d.judul, d.penulis, COALESCE(d.abstrak, '') as abstrak, d.jenis_file, d.status, d.created_at,
+		`SELECT d.id, d.judul, d.penulis, COALESCE(d.npm, '') as npm, COALESCE(d.abstrak, '') as abstrak, d.jenis_file, d.status, d.created_at,
 		        COALESCE(d.fakultas_id::text, '') as fakultas_id,
 		        COALESCE(f.nama, '') as fakultas_nama,
 		        COALESCE(d.prodi_id::text, '') as prodi_id,
@@ -108,6 +108,7 @@ func listDocuments(w http.ResponseWriter, r *http.Request) {
 			&d.ID,
 			&d.Judul,
 			&d.Penulis,
+			&d.NPM,
 			&d.Abstrak,
 			&d.JenisFile,
 			&d.Status,
@@ -165,7 +166,7 @@ func getDocumentFiles(documentID string) []models.DocumentFile {
 func getDocumentById(w http.ResponseWriter, r *http.Request, id string) {
 	var d models.Document
 	err := config.DB.QueryRow(context.Background(),
-		`SELECT d.id, d.judul, d.penulis, COALESCE(d.abstrak, '') as abstrak, d.jenis_file, d.status, d.created_at,
+		`SELECT d.id, d.judul, d.penulis, COALESCE(d.npm, '') as npm, COALESCE(d.abstrak, '') as abstrak, d.jenis_file, d.status, d.created_at,
 		        COALESCE(d.fakultas_id::text, '') as fakultas_id,
 		        COALESCE(f.nama, '') as fakultas_nama,
 		        COALESCE(d.prodi_id::text, '') as prodi_id,
@@ -182,6 +183,7 @@ func getDocumentById(w http.ResponseWriter, r *http.Request, id string) {
 		&d.ID,
 		&d.Judul,
 		&d.Penulis,
+		&d.NPM,
 		&d.Abstrak,
 		&d.JenisFile,
 		&d.Status,
@@ -218,6 +220,7 @@ func createDocument(w http.ResponseWriter, r *http.Request) {
 
 	judul := r.FormValue("title")
 	penulis := r.FormValue("author")
+	npm := r.FormValue("npm")
 	abstrak := r.FormValue("abstrak")
 	jenisFile := r.FormValue("category")
 	status := r.FormValue("status")
@@ -333,14 +336,14 @@ func createDocument(w http.ResponseWriter, r *http.Request) {
 
 	// STEP 2: Insert dokumen ke database dengan path lokal (response cepat)
 	query := `
-		INSERT INTO documents (id, judul, penulis, abstrak, jenis_file, file_path, status, fakultas_id, prodi_id, dosen_pembimbing, dosen_pembimbing_2, kata_kunci, tahun)
-		VALUES ($1, $2, $3, $4, $5, $6, $7,
-			CASE WHEN $8 = '' THEN NULL ELSE $8::uuid END,
+		INSERT INTO documents (id, judul, penulis, npm, abstrak, jenis_file, file_path, status, fakultas_id, prodi_id, dosen_pembimbing, dosen_pembimbing_2, kata_kunci, tahun)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
 			CASE WHEN $9 = '' THEN NULL ELSE $9::uuid END,
-			$10, $11, $12, $13)
+			CASE WHEN $10 = '' THEN NULL ELSE $10::uuid END,
+			$11, $12, $13, $14)
 	`
 	_, err := config.DB.Exec(context.Background(), query,
-		docID, judul, penulis, abstrak, jenisFile, mainFilePath, status, fakultasID, prodiID, dosenPembimbing, dosenPembimbing2, kataKunci, tahun)
+		docID, judul, penulis, npm, abstrak, jenisFile, mainFilePath, status, fakultasID, prodiID, dosenPembimbing, dosenPembimbing2, kataKunci, tahun)
 
 	if err != nil {
 		http.Error(w, "Gagal menyimpan metadata: "+err.Error(), http.StatusInternalServerError)
@@ -374,6 +377,7 @@ func createDocument(w http.ResponseWriter, r *http.Request) {
 		ID:               docID.String(),
 		Judul:            judul,
 		Penulis:          penulis,
+		NPM:              npm,
 		Abstrak:          abstrak,
 		JenisFile:        jenisFile,
 		FakultasID:       fakultasID,
@@ -454,6 +458,7 @@ func updateDocument(w http.ResponseWriter, r *http.Request, id string) {
 
 	judul := r.FormValue("title")
 	penulis := r.FormValue("author")
+	npm := r.FormValue("npm")
 	abstrak := r.FormValue("abstrak")
 	jenisFile := r.FormValue("category")
 	status := r.FormValue("status")
@@ -482,17 +487,17 @@ func updateDocument(w http.ResponseWriter, r *http.Request, id string) {
 	// Update metadata dokumen
 	query := `
 		UPDATE documents
-		SET judul = $1, penulis = $2, abstrak = $3, jenis_file = $4, status = $5,
-		    fakultas_id = CASE WHEN $6 = '' THEN NULL ELSE $6::uuid END,
-		    prodi_id = CASE WHEN $7 = '' THEN NULL ELSE $7::uuid END,
-		    dosen_pembimbing = $8,
-		    dosen_pembimbing_2 = $9,
-		    kata_kunci = $10,
-		    tahun = $11
-		WHERE id = $12
+		SET judul = $1, penulis = $2, npm = $3, abstrak = $4, jenis_file = $5, status = $6,
+		    fakultas_id = CASE WHEN $7 = '' THEN NULL ELSE $7::uuid END,
+		    prodi_id = CASE WHEN $8 = '' THEN NULL ELSE $8::uuid END,
+		    dosen_pembimbing = $9,
+		    dosen_pembimbing_2 = $10,
+		    kata_kunci = $11,
+		    tahun = $12
+		WHERE id = $13
 	`
 	_, err := config.DB.Exec(context.Background(), query,
-		judul, penulis, abstrak, jenisFile, status, fakultasID, prodiID, dosenPembimbing, dosenPembimbing2, kataKunci, tahun, id)
+		judul, penulis, npm, abstrak, jenisFile, status, fakultasID, prodiID, dosenPembimbing, dosenPembimbing2, kataKunci, tahun, id)
 
 	if err != nil {
 		http.Error(w, "Gagal update dokumen: "+err.Error(), http.StatusInternalServerError)
@@ -658,6 +663,7 @@ func updateDocument(w http.ResponseWriter, r *http.Request, id string) {
 		"id":                 id,
 		"judul":              judul,
 		"penulis":            penulis,
+		"npm":                npm,
 		"abstrak":            abstrak,
 		"jenis_file":         jenisFile,
 		"status":             status,
@@ -762,7 +768,7 @@ func PopularDocumentsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := config.DB.Query(context.Background(),
-		`SELECT d.id, d.judul, d.penulis, COALESCE(d.abstrak, '') as abstrak, d.jenis_file, d.status, d.created_at,
+		`SELECT d.id, d.judul, d.penulis, COALESCE(d.npm, '') as npm, COALESCE(d.abstrak, '') as abstrak, d.jenis_file, d.status, d.created_at,
 		        COALESCE(d.fakultas_id::text, '') as fakultas_id,
 		        COALESCE(f.nama, '') as fakultas_nama,
 		        COALESCE(d.prodi_id::text, '') as prodi_id,
@@ -789,6 +795,7 @@ func PopularDocumentsHandler(w http.ResponseWriter, r *http.Request) {
 			&d.ID,
 			&d.Judul,
 			&d.Penulis,
+			&d.NPM,
 			&d.Abstrak,
 			&d.JenisFile,
 			&d.Status,

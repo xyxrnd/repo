@@ -132,6 +132,7 @@ func main() {
 	// --- Student Registration Routes ---
 	// POST: Public (mahasiswa bisa mendaftar tanpa login)
 	// GET/PUT/DELETE: Admin only (mengelola pendaftaran)
+	http.HandleFunc("/api/ocr-ktm", handlers.OCRKtmHandler)
 	http.HandleFunc("/api/student-signup", handlers.StudentSignupHandler)
 	http.HandleFunc("/api/student-registrations", middleware.AdminMiddleware(handlers.StudentRegistrationsHandler))
 	http.HandleFunc("/api/student-registrations/", middleware.AdminMiddleware(handlers.StudentRegistrationByIdHandler))

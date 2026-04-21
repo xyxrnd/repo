@@ -12,26 +12,8 @@
     let loading = true;
     let error = "";
     let isLoggedIn = false;
-    let isMahasiswa = false;
 
-    // Access Request state (per-dokumen, bukan per-file)
-    let showAccessForm = false;
-    let accessFormData = { nama: "", email: "", ktm: null };
-    let accessFormLoading = false;
-    let accessFormSuccess = "";
-    let accessFormError = "";
-
-    // OTP Verification state (step sebelum submit access request)
-    let otpStep = 1; // 1 = email input, 2 = OTP input, 3 = form lengkap
-    let otpEmail = "";
-    let otpCode = "";
-    let otpLoading = false;
-    let otpError = "";
-    let otpSuccess = "";
-    let otpCountdown = 0;
-    let otpTimer = null;
-
-    // Token verification state (otomatis via link email)
+    // Token verification state (backward compatibility untuk link lama dari email)
     let tokenLoading = false;
     let tokenError = "";
     let tokenSuccess = false;
@@ -44,7 +26,7 @@
         loadDocument();
     }
 
-    // Auto-detect token from URL query parameter
+    // Auto-detect token from URL query parameter (backward compatibility)
     $: if ($querystring && doc && !tokenAutoVerified) {
         const urlParams = new URLSearchParams($querystring);
         const urlToken = urlParams.get("token");
@@ -56,7 +38,6 @@
 
     onMount(() => {
         isLoggedIn = authService.isAuthenticated();
-        isMahasiswa = authService.isMahasiswa();
     });
 
     async function loadDocument() {
@@ -93,200 +74,28 @@
     }
 
     function handleFileDownload(file) {
-        if (file.is_locked && !unlockedFiles[file.id]) {
-            if (!isLoggedIn) {
-                window.location.hash = "/student-signup";
-            } else {
-                showAccessForm = true;
-            }
+        // Jika file terkunci dan user belum login, arahkan ke login
+        if (file.is_locked && !isLoggedIn && !unlockedFiles[file.id]) {
+            // Simpan halaman saat ini agar setelah login kembali ke sini
+            sessionStorage.setItem("redirectAfterLogin", `#/document/${doc.id}`);
+            window.location.hash = "/login";
             return;
         }
         window.open(getFileUrl(file.file_path), "_blank");
     }
 
     function handleFilePreview(file) {
-        if (file.is_locked && !unlockedFiles[file.id]) {
-            if (!isLoggedIn) {
-                window.location.hash = "/student-signup";
-            } else {
-                showAccessForm = true;
-            }
+        // Jika file terkunci dan user belum login, arahkan ke login
+        if (file.is_locked && !isLoggedIn && !unlockedFiles[file.id]) {
+            // Simpan halaman saat ini agar setelah login kembali ke sini
+            sessionStorage.setItem("redirectAfterLogin", `#/document/${doc.id}`);
+            window.location.hash = "/login";
             return;
         }
         window.open(getFileUrl(file.file_path), "_blank");
     }
 
-    // Variabel untuk menyimpan email tersensor sebagai placeholder hint untuk mahasiswa
-    let maskedEmail = "";
-
-    // Helper: sensor bagian tengah email (mis: rendhi@gmail.com → r****i@gmail.com)
-    function maskEmail(email) {
-        if (!email) return "";
-        const [local, domain] = email.split("@");
-        if (!domain) return email;
-        if (local.length <= 2) return local[0] + "***@" + domain;
-        const first = local[0];
-        const last = local[local.length - 1];
-        const stars = "*".repeat(Math.min(local.length - 2, 5));
-        return `${first}${stars}${last}@${domain}`;
-    }
-
-    function openAccessForm() {
-        showAccessForm = true;
-        accessFormSuccess = "";
-        accessFormError = "";
-        otpCode = "";
-        otpError = "";
-        otpSuccess = "";
-        otpCountdown = 0;
-        if (otpTimer) clearInterval(otpTimer);
-
-        otpStep = 1;
-        otpEmail = "";
-        accessFormData = { nama: "", email: "", ktm: null };
-
-        // Jika mahasiswa, siapkan placeholder email tersensor
-        if (isMahasiswa) {
-            const currentUser = authService.getUser();
-            maskedEmail = maskEmail(currentUser?.email || "");
-        } else {
-            maskedEmail = "";
-        }
-    }
-
-    function closeAccessForm() {
-        showAccessForm = false;
-        accessFormData = { nama: "", email: "", ktm: null };
-        accessFormSuccess = "";
-        accessFormError = "";
-        otpStep = 1;
-        otpEmail = "";
-        otpCode = "";
-        otpError = "";
-        otpSuccess = "";
-        otpCountdown = 0;
-        maskedEmail = "";
-        if (otpTimer) clearInterval(otpTimer);
-    }
-
-    function handleKtmUpload(event) {
-        const file = event.target.files[0];
-        if (file) {
-            accessFormData.ktm = file;
-        }
-    }
-
-    // Step 1: Kirim OTP ke email
-    async function sendOTP() {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!otpEmail.trim()) {
-            otpError = "Email wajib diisi.";
-            return;
-        }
-        if (!emailRegex.test(otpEmail.trim())) {
-            otpError = "Format email tidak valid.";
-            return;
-        }
-
-        // Validasi: jika mahasiswa, email harus sesuai dengan email akun
-        if (isMahasiswa) {
-            const currentUser = authService.getUser();
-            if (
-                currentUser &&
-                otpEmail.trim().toLowerCase() !==
-                    currentUser.email.toLowerCase()
-            ) {
-                otpError =
-                    "Email tidak sesuai dengan akun Anda. Gunakan email yang terdaftar.";
-                return;
-            }
-        }
-
-        otpLoading = true;
-        otpError = "";
-        otpSuccess = "";
-        try {
-            const response = await fetch(API_ENDPOINTS.SEND_OTP, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    email: otpEmail.trim(),
-                    document_id: doc.id,
-                }),
-            });
-            if (response.status === 429) {
-                otpError =
-                    "Kode OTP sudah dikirim. Tunggu 1 menit sebelum mengirim ulang.";
-                return;
-            }
-            if (!response.ok) {
-                const text = await response.text();
-                throw new Error(text || "Gagal mengirim OTP");
-            }
-            otpStep = 2;
-            otpSuccess = `Kode OTP telah dikirim ke ${otpEmail}. Cek inbox email Anda.`;
-            // Start countdown 60 detik untuk resend
-            otpCountdown = 60;
-            if (otpTimer) clearInterval(otpTimer);
-            otpTimer = setInterval(() => {
-                otpCountdown--;
-                if (otpCountdown <= 0) {
-                    clearInterval(otpTimer);
-                    otpTimer = null;
-                }
-            }, 1000);
-        } catch (e) {
-            otpError = e.message || "Gagal mengirim OTP.";
-        } finally {
-            otpLoading = false;
-        }
-    }
-
-    // Step 2: Verifikasi OTP
-    async function verifyOTP() {
-        if (!otpCode.trim()) {
-            otpError = "Masukkan kode OTP.";
-            return;
-        }
-        if (otpCode.trim().length !== 6) {
-            otpError = "Kode OTP harus 6 digit.";
-            return;
-        }
-
-        otpLoading = true;
-        otpError = "";
-        try {
-            const response = await fetch(API_ENDPOINTS.VERIFY_OTP, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    email: otpEmail.trim(),
-                    document_id: doc.id,
-                    otp_code: otpCode.trim(),
-                }),
-            });
-            if (!response.ok) {
-                const text = await response.text();
-                throw new Error(text || "Kode OTP tidak valid");
-            }
-            otpStep = 3;
-            otpSuccess =
-                "Email berhasil diverifikasi! Silakan lengkapi formulir di bawah.";
-            accessFormData.email = otpEmail.trim();
-            // Jika mahasiswa, auto-fill nama dari akun
-            if (isMahasiswa) {
-                const currentUser = authService.getUser();
-                if (currentUser?.name) accessFormData.nama = currentUser.name;
-            }
-            if (otpTimer) clearInterval(otpTimer);
-        } catch (e) {
-            otpError = e.message || "Kode OTP tidak valid.";
-        } finally {
-            otpLoading = false;
-        }
-    }
-
-    // Auto-verify token from URL (link dari email)
+    // Auto-verify token from URL (backward compatibility - link dari email lama)
     async function autoVerifyToken(token) {
         tokenLoading = true;
         tokenError = "";
@@ -347,60 +156,12 @@
 
     // Check if document has any locked files
     $: hasLockedFiles = doc && doc.files && doc.files.some((f) => f.is_locked);
+    // All locked files are "unlocked" if user is logged in OR has token-based unlock
     $: allLockedUnlocked =
-        doc &&
+        isLoggedIn ||
+        (doc &&
         doc.files &&
-        doc.files.filter((f) => f.is_locked).every((f) => unlockedFiles[f.id]);
-
-    async function submitAccessRequest() {
-        if (!accessFormData.nama.trim()) {
-            accessFormError = "Nama wajib diisi.";
-            return;
-        }
-        if (!accessFormData.ktm) {
-            accessFormError = "Upload KTM wajib dilakukan.";
-            return;
-        }
-        try {
-            accessFormLoading = true;
-            accessFormError = "";
-            const formData = new FormData();
-            formData.append("document_id", doc.id);
-            formData.append("nama", accessFormData.nama.trim());
-            formData.append("email", accessFormData.email.trim());
-            if (accessFormData.ktm) {
-                formData.append("ktm", accessFormData.ktm);
-            }
-            /** @type {Record<string, string>} */
-            const headers = {};
-            if (isMahasiswa) {
-                const token = authService.getToken();
-                if (token) headers["Authorization"] = `Bearer ${token}`;
-            }
-            const response = await fetch(API_ENDPOINTS.ACCESS_REQUESTS, {
-                method: "POST",
-                headers,
-                body: formData,
-            });
-            if (response.status === 409) {
-                accessFormError =
-                    "Anda sudah memiliki permintaan akses yang masih menunggu persetujuan untuk dokumen ini.";
-                return;
-            }
-            if (!response.ok) {
-                const text = await response.text();
-                throw new Error(text || "Gagal mengirim permintaan akses");
-            }
-            accessFormSuccess =
-                "Permintaan akses berhasil dikirim! Silakan tunggu persetujuan dari admin. Link akses akan dikirim ke email Anda.";
-            accessFormData = { nama: "", email: "", ktm: null };
-        } catch (e) {
-            accessFormError =
-                e.message || "Terjadi kesalahan saat mengirim permintaan.";
-        } finally {
-            accessFormLoading = false;
-        }
-    }
+        doc.files.filter((f) => f.is_locked).every((f) => unlockedFiles[f.id]));
 
     function formatDate(dateString) {
         const date = new Date(dateString);
@@ -933,24 +694,24 @@
                                             <!-- File icon -->
                                             <div
                                                 class="w-10 h-10 rounded-lg {file.is_locked &&
-                                                !isMahasiswa &&
+                                                !isLoggedIn &&
                                                 !unlockedFiles[file.id]
                                                     ? 'bg-amber-100 dark:bg-amber-900/30'
                                                     : file.is_locked &&
-                                                        (isMahasiswa ||
+                                                        (isLoggedIn ||
                                                             unlockedFiles[
                                                                 file.id
                                                             ])
                                                       ? 'bg-green-100 dark:bg-green-900/30'
                                                       : 'bg-red-100 dark:bg-red-900/30'} flex items-center justify-center flex-shrink-0"
                                             >
-                                                {#if file.is_locked && !isMahasiswa && !unlockedFiles[file.id]}
+                                                {#if file.is_locked && !isLoggedIn && !unlockedFiles[file.id]}
                                                     <span
                                                         class="material-symbols-outlined text-amber-500"
                                                         style="font-size: 22px;"
                                                         >lock</span
                                                     >
-                                                {:else if file.is_locked && (isMahasiswa || unlockedFiles[file.id])}
+                                                {:else if file.is_locked && (isLoggedIn || unlockedFiles[file.id])}
                                                     <span
                                                         class="material-symbols-outlined text-green-500"
                                                         style="font-size: 22px;"
@@ -977,7 +738,7 @@
                                                     >
                                                         {file.file_name}
                                                     </p>
-                                                    {#if file.is_locked && !unlockedFiles[file.id]}
+                                                    {#if file.is_locked && !isLoggedIn && !unlockedFiles[file.id]}
                                                         <span
                                                             class="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 text-[10px] font-bold rounded uppercase"
                                                         >
@@ -988,7 +749,7 @@
                                                             >
                                                             Terkunci
                                                         </span>
-                                                    {:else if file.is_locked && unlockedFiles[file.id]}
+                                                    {:else if file.is_locked && (isLoggedIn || unlockedFiles[file.id])}
                                                         <span
                                                             class="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 text-[10px] font-bold rounded uppercase"
                                                         >
@@ -1014,63 +775,30 @@
                                             <div
                                                 class="flex items-center gap-2 flex-shrink-0"
                                             >
-                                                {#if file.is_locked && !unlockedFiles[file.id]}
-                                                    <!-- File masih terkunci -->
-                                                    <span
-                                                        class="inline-flex items-center gap-1 px-2 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 text-[10px] font-bold rounded-lg"
+                                                {#if file.is_locked && !isLoggedIn && !unlockedFiles[file.id]}
+                                                    <!-- File terkunci & belum login -->
+                                                    <button
+                                                        on:click={() =>
+                                                            handleFilePreview(
+                                                                file,
+                                                            )}
+                                                        class="inline-flex items-center gap-1 px-2 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 text-[10px] font-bold rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-all"
+                                                        title="Login untuk membuka"
                                                     >
                                                         <span
                                                             class="material-symbols-outlined"
                                                             style="font-size: 13px;"
                                                             >lock</span
                                                         >
-                                                        Terkunci
-                                                    </span>
-                                                {:else if file.is_locked && unlockedFiles[file.id]}
-                                                    <!-- File terkunci tapi sudah di-unlock -->
-                                                    <button
-                                                        on:click={() =>
-                                                            handleUnlockedPreview(
-                                                                file.id,
-                                                            )}
-                                                        class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-primary/10 hover:text-primary rounded-lg text-xs font-semibold transition-all"
-                                                        title="Preview file"
-                                                    >
-                                                        <span
-                                                            class="material-symbols-outlined"
-                                                            style="font-size: 16px;"
-                                                            >visibility</span
-                                                        >
-                                                        <span
-                                                            class="hidden sm:inline"
-                                                            >Preview</span
-                                                        >
-                                                    </button>
-                                                    <button
-                                                        on:click={() =>
-                                                            handleUnlockedDownload(
-                                                                file.id,
-                                                            )}
-                                                        class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-lg text-xs font-semibold transition-all"
-                                                        title="Download file"
-                                                    >
-                                                        <span
-                                                            class="material-symbols-outlined"
-                                                            style="font-size: 16px;"
-                                                            >download</span
-                                                        >
-                                                        <span
-                                                            class="hidden sm:inline"
-                                                            >Download</span
-                                                        >
+                                                        Login untuk Akses
                                                     </button>
                                                 {:else}
-                                                    <!-- File tidak terkunci -->
+                                                    <!-- File tidak terkunci ATAU sudah login/token unlock -->
                                                     <button
                                                         on:click={() =>
-                                                            handleFilePreview(
-                                                                file,
-                                                            )}
+                                                            file.is_locked && unlockedFiles[file.id]
+                                                                ? handleUnlockedPreview(file.id)
+                                                                : handleFilePreview(file)}
                                                         class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-primary/10 hover:text-primary rounded-lg text-xs font-semibold transition-all"
                                                         title="Preview file"
                                                     >
@@ -1086,9 +814,9 @@
                                                     </button>
                                                     <button
                                                         on:click={() =>
-                                                            handleFileDownload(
-                                                                file,
-                                                            )}
+                                                            file.is_locked && unlockedFiles[file.id]
+                                                                ? handleUnlockedDownload(file.id)
+                                                                : handleFileDownload(file)}
                                                         class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-lg text-xs font-semibold transition-all"
                                                         title="Download file"
                                                     >
@@ -1115,7 +843,7 @@
                                     class="px-6 py-4 bg-amber-50 dark:bg-amber-900/10 border-t border-amber-200/50 dark:border-amber-800/30"
                                 >
                                     {#if !isLoggedIn}
-                                        <!-- Belum login: arahkan untuk mendaftar dulu -->
+                                        <!-- Belum login: arahkan untuk login -->
                                         <div class="flex items-start gap-3">
                                             <span
                                                 class="material-symbols-outlined text-amber-500 flex-shrink-0 mt-0.5"
@@ -1132,34 +860,35 @@
                                                     class="text-xs text-slate-600 dark:text-slate-400 mb-3"
                                                 >
                                                     Beberapa file pada dokumen
-                                                    ini dikunci. Silakan daftar
-                                                    atau login terlebih dahulu
-                                                    untuk dapat meminta akses.
+                                                    ini dikunci. Silakan login
+                                                    untuk membuka semua file
+                                                    terkunci pada dokumen ini.
                                                 </p>
                                                 <div
                                                     class="flex items-center gap-2"
                                                 >
                                                     <a
-                                                        href="#/student-signup"
-                                                        class="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-primary to-blue-600 hover:from-primary/90 hover:to-blue-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all"
-                                                    >
-                                                        <span
-                                                            class="material-symbols-outlined"
-                                                            style="font-size: 16px;"
-                                                            >person_add</span
-                                                        >
-                                                        Daftar Akun
-                                                    </a>
-                                                    <a
                                                         href="#/login"
-                                                        class="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold transition-all"
+                                                        on:click={() => sessionStorage.setItem('redirectAfterLogin', `#/document/${doc.id}`)}
+                                                        class="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-primary to-blue-600 hover:from-primary/90 hover:to-blue-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all"
                                                     >
                                                         <span
                                                             class="material-symbols-outlined"
                                                             style="font-size: 16px;"
                                                             >login</span
                                                         >
-                                                        Login
+                                                        Login untuk Akses
+                                                    </a>
+                                                    <a
+                                                        href="#/student-signup"
+                                                        class="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold transition-all"
+                                                    >
+                                                        <span
+                                                            class="material-symbols-outlined"
+                                                            style="font-size: 16px;"
+                                                            >person_add</span
+                                                        >
+                                                        Belum punya akun? Daftar
                                                     </a>
                                                 </div>
                                             </div>
@@ -1195,9 +924,9 @@
                                                 pada dokumen ini telah dibuka.
                                             </p>
                                         </div>
-                                    {:else if tokenError && !showAccessForm}
+                                    {:else if tokenError}
                                         <div
-                                            class="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 rounded-lg mb-3"
+                                            class="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 rounded-lg"
                                         >
                                             <span
                                                 class="material-symbols-outlined text-red-500 flex-shrink-0"
@@ -1209,631 +938,6 @@
                                             >
                                                 {tokenError}
                                             </p>
-                                        </div>
-                                        <button
-                                            on:click={openAccessForm}
-                                            class="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-lg text-xs font-bold shadow-sm transition-all"
-                                        >
-                                            <span
-                                                class="material-symbols-outlined"
-                                                style="font-size: 16px;"
-                                                >key</span
-                                            >
-                                            Minta Akses Dokumen
-                                        </button>
-                                    {:else if !showAccessForm}
-                                        <p
-                                            class="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1.5 mb-3"
-                                        >
-                                            <span
-                                                class="material-symbols-outlined"
-                                                style="font-size: 14px;"
-                                                >info</span
-                                            >
-                                            Beberapa file dikunci. Minta akses untuk
-                                            membuka semua file terkunci pada dokumen
-                                            ini. Link akses akan dikirim ke email
-                                            Anda.
-                                        </p>
-                                        <button
-                                            on:click={openAccessForm}
-                                            class="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-lg text-xs font-bold shadow-sm transition-all"
-                                        >
-                                            <span
-                                                class="material-symbols-outlined"
-                                                style="font-size: 16px;"
-                                                >key</span
-                                            >
-                                            Minta Akses Dokumen
-                                        </button>
-                                    {/if}
-
-                                    <!-- Access Request Form - 3 Step OTP Flow -->
-                                    {#if showAccessForm}
-                                        <div
-                                            class="mt-4 p-5 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/10 dark:to-orange-900/10 rounded-xl border border-amber-200/60 dark:border-amber-800/30 animate-slideDown"
-                                        >
-                                            <div
-                                                class="flex items-center justify-between mb-4"
-                                            >
-                                                <h4
-                                                    class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2"
-                                                >
-                                                    <span
-                                                        class="material-symbols-outlined text-amber-500"
-                                                        style="font-size: 18px;"
-                                                        >key</span
-                                                    >
-                                                    Permintaan Akses Dokumen
-                                                </h4>
-                                                <button
-                                                    on:click={closeAccessForm}
-                                                    class="p-1 hover:bg-amber-200/50 dark:hover:bg-amber-900/30 rounded-lg transition-colors"
-                                                    title="Tutup formulir"
-                                                >
-                                                    <span
-                                                        class="material-symbols-outlined text-slate-400"
-                                                        style="font-size: 18px;"
-                                                        >close</span
-                                                    >
-                                                </button>
-                                            </div>
-
-                                            <!-- Step Indicator -->
-                                            <div
-                                                class="flex items-center gap-2 mb-5"
-                                            >
-                                                <div
-                                                    class="flex items-center gap-1.5"
-                                                >
-                                                    <div
-                                                        class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold {otpStep >=
-                                                        1
-                                                            ? 'bg-amber-500 text-white'
-                                                            : 'bg-slate-200 dark:bg-slate-600 text-slate-400'}"
-                                                    >
-                                                        {#if otpStep > 1}
-                                                            <span
-                                                                class="material-symbols-outlined"
-                                                                style="font-size: 14px;"
-                                                                >check</span
-                                                            >
-                                                        {:else}
-                                                            1
-                                                        {/if}
-                                                    </div>
-                                                    <span
-                                                        class="text-[10px] font-semibold {otpStep >=
-                                                        1
-                                                            ? 'text-amber-600 dark:text-amber-400'
-                                                            : 'text-slate-400'}"
-                                                        >Email</span
-                                                    >
-                                                </div>
-                                                <div
-                                                    class="flex-1 h-0.5 {otpStep >=
-                                                    2
-                                                        ? 'bg-amber-400'
-                                                        : 'bg-slate-200 dark:bg-slate-600'} rounded-full"
-                                                ></div>
-                                                <div
-                                                    class="flex items-center gap-1.5"
-                                                >
-                                                    <div
-                                                        class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold {otpStep >=
-                                                        2
-                                                            ? 'bg-amber-500 text-white'
-                                                            : 'bg-slate-200 dark:bg-slate-600 text-slate-400'}"
-                                                    >
-                                                        {#if otpStep > 2}
-                                                            <span
-                                                                class="material-symbols-outlined"
-                                                                style="font-size: 14px;"
-                                                                >check</span
-                                                            >
-                                                        {:else}
-                                                            2
-                                                        {/if}
-                                                    </div>
-                                                    <span
-                                                        class="text-[10px] font-semibold {otpStep >=
-                                                        2
-                                                            ? 'text-amber-600 dark:text-amber-400'
-                                                            : 'text-slate-400'}"
-                                                        >OTP</span
-                                                    >
-                                                </div>
-                                                <div
-                                                    class="flex-1 h-0.5 {otpStep >=
-                                                    3
-                                                        ? 'bg-amber-400'
-                                                        : 'bg-slate-200 dark:bg-slate-600'} rounded-full"
-                                                ></div>
-                                                <div
-                                                    class="flex items-center gap-1.5"
-                                                >
-                                                    <div
-                                                        class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold {otpStep >=
-                                                        3
-                                                            ? 'bg-amber-500 text-white'
-                                                            : 'bg-slate-200 dark:bg-slate-600 text-slate-400'}"
-                                                    >
-                                                        3
-                                                    </div>
-                                                    <span
-                                                        class="text-[10px] font-semibold {otpStep >=
-                                                        3
-                                                            ? 'text-amber-600 dark:text-amber-400'
-                                                            : 'text-slate-400'}"
-                                                        >Data</span
-                                                    >
-                                                </div>
-                                            </div>
-
-                                            {#if accessFormSuccess}
-                                                <div
-                                                    class="flex items-start gap-3 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800/30 rounded-lg"
-                                                >
-                                                    <span
-                                                        class="material-symbols-outlined text-green-500 flex-shrink-0"
-                                                        style="font-size: 20px;"
-                                                        >check_circle</span
-                                                    >
-                                                    <div>
-                                                        <p
-                                                            class="text-sm font-medium text-green-800 dark:text-green-300"
-                                                        >
-                                                            {accessFormSuccess}
-                                                        </p>
-                                                        <button
-                                                            on:click={closeAccessForm}
-                                                            class="mt-2 text-xs font-semibold text-green-600 hover:text-green-700 underline"
-                                                        >
-                                                            Tutup
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            {:else}
-                                                <div class="space-y-3">
-                                                    <!-- ===== STEP 1: Email Input ===== -->
-                                                    {#if otpStep === 1}
-                                                        <div
-                                                            class="animate-slideDown"
-                                                        >
-                                                            <p
-                                                                class="text-xs text-slate-500 dark:text-slate-400 mb-3"
-                                                            >
-                                                                Masukkan email
-                                                                Anda untuk
-                                                                verifikasi. Kode
-                                                                OTP akan dikirim
-                                                                ke email Anda.
-                                                            </p>
-                                                            <div>
-                                                                <label
-                                                                    for="otp-email"
-                                                                    class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1"
-                                                                >
-                                                                    Alamat Email <span
-                                                                        class="text-red-500"
-                                                                        >*</span
-                                                                    >
-                                                                </label>
-                                                                <input
-                                                                    id="otp-email"
-                                                                    type="email"
-                                                                    bind:value={
-                                                                        otpEmail
-                                                                    }
-                                                                    placeholder={maskedEmail ||
-                                                                        "contoh@email.com"}
-                                                                    class="w-full px-3 py-2.5 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-amber-400 focus:border-amber-400 text-slate-900 dark:text-white placeholder-slate-400 transition-all"
-                                                                    on:keydown={(
-                                                                        e,
-                                                                    ) =>
-                                                                        e.key ===
-                                                                            "Enter" &&
-                                                                        sendOTP()}
-                                                                />
-                                                                {#if isMahasiswa && maskedEmail}
-                                                                    <p
-                                                                        class="mt-1 text-[11px] text-amber-600 dark:text-amber-400 flex items-center gap-1"
-                                                                    >
-                                                                        <span
-                                                                            class="material-symbols-outlined"
-                                                                            style="font-size: 13px;"
-                                                                            >info</span
-                                                                        >
-                                                                        Masukkan
-                                                                        email yang
-                                                                        terdaftar
-                                                                        di akun Anda
-                                                                    </p>
-                                                                {/if}
-                                                            </div>
-
-                                                            <!-- OTP Error -->
-                                                            {#if otpError}
-                                                                <div
-                                                                    class="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 rounded-lg"
-                                                                >
-                                                                    <span
-                                                                        class="material-symbols-outlined text-red-500 flex-shrink-0"
-                                                                        style="font-size: 16px;"
-                                                                        >error</span
-                                                                    >
-                                                                    <p
-                                                                        class="text-xs text-red-600 dark:text-red-400"
-                                                                    >
-                                                                        {otpError}
-                                                                    </p>
-                                                                </div>
-                                                            {/if}
-
-                                                            <div
-                                                                class="flex items-center gap-2 pt-1"
-                                                            >
-                                                                <button
-                                                                    on:click={sendOTP}
-                                                                    disabled={otpLoading}
-                                                                    class="inline-flex items-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white rounded-lg text-xs font-bold shadow-sm hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                                                >
-                                                                    {#if otpLoading}
-                                                                        <span
-                                                                            class="material-symbols-outlined animate-spin"
-                                                                            style="font-size: 16px;"
-                                                                            >progress_activity</span
-                                                                        >
-                                                                        Mengirim...
-                                                                    {:else}
-                                                                        <span
-                                                                            class="material-symbols-outlined"
-                                                                            style="font-size: 16px;"
-                                                                            >mail</span
-                                                                        >
-                                                                        Kirim Kode
-                                                                        OTP
-                                                                    {/if}
-                                                                </button>
-                                                                <button
-                                                                    on:click={closeAccessForm}
-                                                                    class="inline-flex items-center gap-1 px-3 py-2.5 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg text-xs font-semibold transition-all"
-                                                                >
-                                                                    Batal
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    {/if}
-
-                                                    <!-- ===== STEP 2: OTP Input ===== -->
-                                                    {#if otpStep === 2}
-                                                        <div
-                                                            class="animate-slideDown"
-                                                        >
-                                                            <!-- Email verified indicator -->
-                                                            <div
-                                                                class="flex items-center gap-2 p-2.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/30 rounded-lg mb-3"
-                                                            >
-                                                                <span
-                                                                    class="material-symbols-outlined text-blue-500"
-                                                                    style="font-size: 16px;"
-                                                                    >mail</span
-                                                                >
-                                                                <span
-                                                                    class="text-xs text-blue-700 dark:text-blue-300 font-medium truncate"
-                                                                    >{otpEmail}</span
-                                                                >
-                                                                <button
-                                                                    on:click={() => {
-                                                                        otpStep = 1;
-                                                                        otpError =
-                                                                            "";
-                                                                        otpSuccess =
-                                                                            "";
-                                                                        otpCode =
-                                                                            "";
-                                                                    }}
-                                                                    class="ml-auto text-[10px] text-blue-500 hover:text-blue-700 font-semibold underline flex-shrink-0"
-                                                                >
-                                                                    Ubah
-                                                                </button>
-                                                            </div>
-
-                                                            {#if otpSuccess}
-                                                                <div
-                                                                    class="flex items-start gap-2 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800/30 rounded-lg mb-3"
-                                                                >
-                                                                    <span
-                                                                        class="material-symbols-outlined text-green-500 flex-shrink-0"
-                                                                        style="font-size: 16px;"
-                                                                        >check_circle</span
-                                                                    >
-                                                                    <p
-                                                                        class="text-xs text-green-700 dark:text-green-400 font-medium"
-                                                                    >
-                                                                        {otpSuccess}
-                                                                    </p>
-                                                                </div>
-                                                            {/if}
-
-                                                            <div>
-                                                                <label
-                                                                    for="otp-code"
-                                                                    class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1"
-                                                                >
-                                                                    Masukkan
-                                                                    Kode OTP <span
-                                                                        class="text-red-500"
-                                                                        >*</span
-                                                                    >
-                                                                </label>
-                                                                <input
-                                                                    id="otp-code"
-                                                                    type="text"
-                                                                    bind:value={
-                                                                        otpCode
-                                                                    }
-                                                                    placeholder="Masukkan 6 digit kode"
-                                                                    maxlength="6"
-                                                                    class="w-full px-3 py-2.5 text-center text-lg font-mono font-bold tracking-[6px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-amber-400 focus:border-amber-400 text-slate-900 dark:text-white placeholder-slate-400 placeholder:text-sm placeholder:tracking-normal placeholder:font-normal transition-all"
-                                                                    on:keydown={(
-                                                                        e,
-                                                                    ) =>
-                                                                        e.key ===
-                                                                            "Enter" &&
-                                                                        verifyOTP()}
-                                                                />
-                                                                <p
-                                                                    class="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500"
-                                                                >
-                                                                    Kode berlaku
-                                                                    selama 5
-                                                                    menit.
-                                                                    {#if otpCountdown > 0}
-                                                                        Kirim
-                                                                        ulang
-                                                                        dalam <span
-                                                                            class="font-bold text-amber-500"
-                                                                            >{otpCountdown}s</span
-                                                                        >
-                                                                    {:else}
-                                                                        <button
-                                                                            on:click={sendOTP}
-                                                                            disabled={otpLoading}
-                                                                            class="text-blue-500 hover:text-blue-700 font-semibold underline disabled:opacity-50"
-                                                                        >
-                                                                            Kirim
-                                                                            ulang
-                                                                            OTP
-                                                                        </button>
-                                                                    {/if}
-                                                                </p>
-                                                            </div>
-
-                                                            <!-- OTP Error -->
-                                                            {#if otpError}
-                                                                <div
-                                                                    class="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 rounded-lg"
-                                                                >
-                                                                    <span
-                                                                        class="material-symbols-outlined text-red-500 flex-shrink-0"
-                                                                        style="font-size: 16px;"
-                                                                        >error</span
-                                                                    >
-                                                                    <p
-                                                                        class="text-xs text-red-600 dark:text-red-400"
-                                                                    >
-                                                                        {otpError}
-                                                                    </p>
-                                                                </div>
-                                                            {/if}
-
-                                                            <div
-                                                                class="flex items-center gap-2 pt-1"
-                                                            >
-                                                                <button
-                                                                    on:click={verifyOTP}
-                                                                    disabled={otpLoading}
-                                                                    class="inline-flex items-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white rounded-lg text-xs font-bold shadow-sm hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                                                >
-                                                                    {#if otpLoading}
-                                                                        <span
-                                                                            class="material-symbols-outlined animate-spin"
-                                                                            style="font-size: 16px;"
-                                                                            >progress_activity</span
-                                                                        >
-                                                                        Memverifikasi...
-                                                                    {:else}
-                                                                        <span
-                                                                            class="material-symbols-outlined"
-                                                                            style="font-size: 16px;"
-                                                                            >verified</span
-                                                                        >
-                                                                        Verifikasi
-                                                                        OTP
-                                                                    {/if}
-                                                                </button>
-                                                                <button
-                                                                    on:click={closeAccessForm}
-                                                                    class="inline-flex items-center gap-1 px-3 py-2.5 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg text-xs font-semibold transition-all"
-                                                                >
-                                                                    Batal
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    {/if}
-
-                                                    <!-- ===== STEP 3: Form Lengkap (Nama + KTM) ===== -->
-                                                    {#if otpStep === 3}
-                                                        <div
-                                                            class="animate-slideDown"
-                                                        >
-                                                            <!-- Email verified badge -->
-                                                            <div
-                                                                class="flex items-center gap-2 p-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800/30 rounded-lg mb-3"
-                                                            >
-                                                                <span
-                                                                    class="material-symbols-outlined text-green-500"
-                                                                    style="font-size: 16px;"
-                                                                    >verified</span
-                                                                >
-                                                                <span
-                                                                    class="text-xs text-green-700 dark:text-green-300 font-medium"
-                                                                    >{otpEmail}</span
-                                                                >
-                                                                <span
-                                                                    class="ml-auto inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-green-100 dark:bg-green-800/30 text-green-600 dark:text-green-400 text-[10px] font-bold rounded uppercase"
-                                                                >
-                                                                    <span
-                                                                        class="material-symbols-outlined"
-                                                                        style="font-size: 11px;"
-                                                                        >check</span
-                                                                    >
-                                                                    Terverifikasi
-                                                                </span>
-                                                            </div>
-
-                                                            {#if otpSuccess}
-                                                                <div
-                                                                    class="flex items-start gap-2 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800/30 rounded-lg mb-3"
-                                                                >
-                                                                    <span
-                                                                        class="material-symbols-outlined text-green-500 flex-shrink-0"
-                                                                        style="font-size: 16px;"
-                                                                        >check_circle</span
-                                                                    >
-                                                                    <p
-                                                                        class="text-xs text-green-700 dark:text-green-400 font-medium"
-                                                                    >
-                                                                        {otpSuccess}
-                                                                    </p>
-                                                                </div>
-                                                            {/if}
-
-                                                            <!-- Nama -->
-                                                            <div>
-                                                                <label
-                                                                    for="access-nama-doc"
-                                                                    class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1"
-                                                                >
-                                                                    Nama Lengkap <span
-                                                                        class="text-red-500"
-                                                                        >*</span
-                                                                    >
-                                                                </label>
-                                                                <input
-                                                                    id="access-nama-doc"
-                                                                    type="text"
-                                                                    bind:value={
-                                                                        accessFormData.nama
-                                                                    }
-                                                                    placeholder="Masukkan nama lengkap Anda"
-                                                                    class="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-amber-400 focus:border-amber-400 text-slate-900 dark:text-white placeholder-slate-400 transition-all"
-                                                                />
-                                                            </div>
-
-                                                            <!-- Upload KTM -->
-                                                            <div>
-                                                                <label
-                                                                    for="access-ktm-doc"
-                                                                    class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1"
-                                                                >
-                                                                    Upload KTM
-                                                                    (Kartu Tanda
-                                                                    Mahasiswa) <span
-                                                                        class="text-red-500"
-                                                                        >*</span
-                                                                    >
-                                                                </label>
-                                                                <div
-                                                                    class="relative"
-                                                                >
-                                                                    <input
-                                                                        id="access-ktm-doc"
-                                                                        type="file"
-                                                                        accept="image/*,.pdf"
-                                                                        on:change={handleKtmUpload}
-                                                                        class="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-amber-400 focus:border-amber-400 text-slate-900 dark:text-white file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-amber-100 file:text-amber-600 hover:file:bg-amber-200 transition-all"
-                                                                    />
-                                                                </div>
-                                                                {#if accessFormData.ktm}
-                                                                    <p
-                                                                        class="mt-1 text-xs text-green-600 flex items-center gap-1"
-                                                                    >
-                                                                        <span
-                                                                            class="material-symbols-outlined"
-                                                                            style="font-size: 14px;"
-                                                                            >check_circle</span
-                                                                        >
-                                                                        {accessFormData
-                                                                            .ktm
-                                                                            .name}
-                                                                    </p>
-                                                                {/if}
-                                                                <p
-                                                                    class="mt-1 text-[11px] text-slate-400"
-                                                                >
-                                                                    Format: JPG,
-                                                                    PNG, PDF.
-                                                                    Maksimum 5
-                                                                    MB.
-                                                                </p>
-                                                            </div>
-
-                                                            <!-- Error Message -->
-                                                            {#if accessFormError}
-                                                                <div
-                                                                    class="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 rounded-lg"
-                                                                >
-                                                                    <span
-                                                                        class="material-symbols-outlined text-red-500 flex-shrink-0"
-                                                                        style="font-size: 16px;"
-                                                                        >error</span
-                                                                    >
-                                                                    <p
-                                                                        class="text-xs text-red-600 dark:text-red-400"
-                                                                    >
-                                                                        {accessFormError}
-                                                                    </p>
-                                                                </div>
-                                                            {/if}
-
-                                                            <!-- Buttons -->
-                                                            <div
-                                                                class="flex items-center gap-2 pt-1"
-                                                            >
-                                                                <button
-                                                                    on:click={submitAccessRequest}
-                                                                    disabled={accessFormLoading}
-                                                                    class="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-lg text-xs font-bold shadow-sm hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                                                >
-                                                                    {#if accessFormLoading}
-                                                                        <span
-                                                                            class="material-symbols-outlined animate-spin"
-                                                                            style="font-size: 16px;"
-                                                                            >progress_activity</span
-                                                                        >
-                                                                        Mengirim...
-                                                                    {:else}
-                                                                        <span
-                                                                            class="material-symbols-outlined"
-                                                                            style="font-size: 16px;"
-                                                                            >send</span
-                                                                        >
-                                                                        Kirim Permintaan
-                                                                    {/if}
-                                                                </button>
-                                                                <button
-                                                                    on:click={closeAccessForm}
-                                                                    class="inline-flex items-center gap-1 px-3 py-2 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg text-xs font-semibold transition-all"
-                                                                >
-                                                                    Batal
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    {/if}
-                                                </div>
-                                            {/if}
                                         </div>
                                     {/if}
                                 </div>

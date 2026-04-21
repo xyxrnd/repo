@@ -22,6 +22,43 @@ import (
 
 // ===== STUDENT REGISTRATION HANDLERS =====
 
+// OCRKtmHandler mengekstrak data dari foto KTM menggunakan OCR
+// POST /api/ocr-ktm
+func OCRKtmHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		middleware.EnableCORS(w)
+		return
+	}
+	middleware.EnableCORS(w)
+
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	r.ParseMultipartForm(10 << 20) // 10 MB max
+
+	ktmFile, _, err := r.FormFile("ktm")
+	if err != nil {
+		http.Error(w, `{"error":"File KTM wajib diupload"}`, http.StatusBadRequest)
+		return
+	}
+	defer ktmFile.Close()
+
+	data, err := utils.ExtractKTMData(ktmFile)
+	if err != nil {
+		fmt.Printf("⚠️ OCR KTM gagal: %v\n", err)
+		http.Error(w, `{"error":"Gagal membaca data KTM: `+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Printf("✅ OCR KTM berhasil - Nama: %s, NPM: %s, Fakultas: %s, Prodi: %s\n",
+		data.Name, data.NPM, data.Fakultas, data.Prodi)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(data)
+}
+
 // StudentSignupHandler menangani pendaftaran mahasiswa baru (public)
 // POST /api/student-signup
 func StudentSignupHandler(w http.ResponseWriter, r *http.Request) {
@@ -41,6 +78,9 @@ func StudentSignupHandler(w http.ResponseWriter, r *http.Request) {
 	name := r.FormValue("name")
 	email := r.FormValue("email")
 	password := r.FormValue("password")
+	npm := r.FormValue("npm")
+	fakultas := r.FormValue("fakultas")
+	prodi := r.FormValue("prodi")
 
 	if name == "" || email == "" || password == "" {
 		http.Error(w, `{"error":"Nama, email, dan password wajib diisi"}`, http.StatusBadRequest)
@@ -112,9 +152,9 @@ func StudentSignupHandler(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 
 	_, err = config.DB.Exec(context.Background(),
-		`INSERT INTO student_registrations (id, name, email, password, ktm_path, status, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7)`,
-		regID, name, email, string(hashedPassword), ktmPath, now, now)
+		`INSERT INTO student_registrations (id, name, email, password, ktm_path, npm, fakultas, prodi, status, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9, $10)`,
+		regID, name, email, string(hashedPassword), ktmPath, npm, fakultas, prodi, now, now)
 
 	if err != nil {
 		http.Error(w, `{"error":"Gagal menyimpan pendaftaran: `+err.Error()+`"}`, http.StatusInternalServerError)
@@ -144,7 +184,7 @@ func StudentRegistrationsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := config.DB.Query(context.Background(),
-		`SELECT id, name, email, COALESCE(ktm_path, '') as ktm_path, status, created_at, updated_at
+		`SELECT id, name, email, COALESCE(ktm_path, '') as ktm_path, COALESCE(npm, '') as npm, COALESCE(fakultas, '') as fakultas, COALESCE(prodi, '') as prodi, status, created_at, updated_at
 		 FROM student_registrations
 		 ORDER BY created_at DESC`)
 	if err != nil {
@@ -156,7 +196,7 @@ func StudentRegistrationsHandler(w http.ResponseWriter, r *http.Request) {
 	registrations := []models.StudentRegistration{}
 	for rows.Next() {
 		var reg models.StudentRegistration
-		err := rows.Scan(&reg.ID, &reg.Name, &reg.Email, &reg.KtmPath, &reg.Status, &reg.CreatedAt, &reg.UpdatedAt)
+		err := rows.Scan(&reg.ID, &reg.Name, &reg.Email, &reg.KtmPath, &reg.NPM, &reg.Fakultas, &reg.Prodi, &reg.Status, &reg.CreatedAt, &reg.UpdatedAt)
 		if err != nil {
 			continue
 		}

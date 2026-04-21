@@ -65,6 +65,7 @@ export const API_ENDPOINTS = {
 
   // Student Registration
   STUDENT_SIGNUP: `${API_BASE_URL}/api/student-signup`,
+  OCR_KTM: `${API_BASE_URL}/api/ocr-ktm`,
   STUDENT_REGISTRATIONS: `${API_BASE_URL}/api/student-registrations`,
   STUDENT_REGISTRATION_BY_ID: (id) =>
     `${API_BASE_URL}/api/student-registrations/${id}`,

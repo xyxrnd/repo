@@ -7,6 +7,7 @@ type Document struct {
 	ID               string         `json:"id"`
 	Judul            string         `json:"judul"`
 	Penulis          string         `json:"penulis"`
+	NPM              string         `json:"npm,omitempty"`
 	Abstrak          string         `json:"abstrak,omitempty"`
 	JenisFile        string         `json:"jenis_file"`
 	FakultasID       string         `json:"fakultas_id,omitempty"`
@@ -39,6 +40,7 @@ type DocumentFile struct {
 type CreateDocumentRequest struct {
 	Title            string `json:"title"`
 	Author           string `json:"author"`
+	NPM              string `json:"npm"`
 	Abstrak          string `json:"abstrak"`
 	Category         string `json:"category"`
 	Status           string `json:"status"`
@@ -54,6 +56,7 @@ type CreateDocumentRequest struct {
 type UpdateDocumentRequest struct {
 	Title            string `json:"title"`
 	Author           string `json:"author"`
+	NPM              string `json:"npm"`
 	Abstrak          string `json:"abstrak"`
 	Category         string `json:"category"`
 	Status           string `json:"status"`

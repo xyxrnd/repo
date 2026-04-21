@@ -12,6 +12,7 @@
 
     let title = "";
     let author = "";
+    let npm = "";
     let abstrak = "";
     let fileType = "";
     let status = "draft";
@@ -55,6 +56,7 @@
             const doc = await getDocumentById(params.id);
             title = doc.judul;
             author = doc.penulis;
+            npm = doc.npm || "";
             abstrak = doc.abstrak || "";
             fileType = doc.jenis_file;
             status = doc.status;
@@ -179,6 +181,7 @@
         const formData = new FormData();
         formData.append("title", title);
         formData.append("author", author);
+        formData.append("npm", npm);
         formData.append("abstrak", abstrak);
         formData.append("category", fileType);
         formData.append("status", status);
@@ -316,7 +319,7 @@
                         </p>
                     </div>
 
-                    <!-- Penulis + Jenis -->
+                    <!-- Penulis + NPM -->
                     <div class="grid md:grid-cols-2 gap-6">
                         <div>
                             <label
@@ -336,23 +339,42 @@
 
                         <div>
                             <label
-                                for="edit-jenis"
+                                for="edit-npm"
                                 class="block text-sm font-bold mb-2 text-slate-700 dark:text-slate-300"
                             >
-                                Jenis Dokumen <span class="text-red-500">*</span
-                                >
+                                NPM
                             </label>
-                            <select
-                                id="edit-jenis"
-                                bind:value={fileType}
+                            <input
+                                id="edit-npm"
+                                bind:value={npm}
                                 class="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border-none rounded-lg focus:ring-2 focus:ring-primary/50 text-sm transition-all"
-                            >
-                                <option value="">Pilih jenis dokumen</option>
-                                <option value="skripsi">Skripsi</option>
-                                <option value="tesis">Tesis</option>
-                                <option value="jurnal">Jurnal</option>
-                            </select>
+                                placeholder="Contoh: 2110631170123"
+                                type="text"
+                            />
+                            <p class="mt-1 text-xs text-slate-400">
+                                Nomor Pokok Mahasiswa (opsional).
+                            </p>
                         </div>
+                    </div>
+
+                    <!-- Jenis Dokumen -->
+                    <div>
+                        <label
+                            for="edit-jenis"
+                            class="block text-sm font-bold mb-2 text-slate-700 dark:text-slate-300"
+                        >
+                            Jenis Dokumen <span class="text-red-500">*</span>
+                        </label>
+                        <select
+                            id="edit-jenis"
+                            bind:value={fileType}
+                            class="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border-none rounded-lg focus:ring-2 focus:ring-primary/50 text-sm transition-all"
+                        >
+                            <option value="">Pilih jenis dokumen</option>
+                            <option value="skripsi">Skripsi</option>
+                            <option value="tesis">Tesis</option>
+                            <option value="jurnal">Jurnal</option>
+                        </select>
                     </div>
 
                     <!-- Fakultas + Prodi -->

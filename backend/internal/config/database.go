@@ -85,7 +85,7 @@ func runMigrations(pool *pgxpool.Pool) {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_document_views_doc_id ON document_views(document_id)`,
 		// Index untuk unique view per IP per hari
-		`CREATE INDEX IF NOT EXISTS idx_document_views_unique_daily ON document_views(document_id, ip_address, (viewed_at::date))`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_document_views_unique_daily ON document_views(document_id, ip_address, CAST(viewed_at AT TIME ZONE 'UTC' AS DATE))`,
 		// Migrasi: bersihkan duplikat view lama lalu buat unique constraint
 		`DO $$
 		BEGIN
@@ -105,7 +105,7 @@ func runMigrations(pool *pgxpool.Pool) {
 			END IF;
 		END $$`,
 		// Unique constraint untuk mencegah duplikat view per IP per hari (race condition safe)
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_document_views_unique_constraint ON document_views(document_id, ip_address, (viewed_at::date))`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_document_views_unique_constraint ON document_views(document_id, ip_address, CAST(viewed_at AT TIME ZONE 'UTC' AS DATE))`,
 		// Tambah kolom view_count di documents untuk cache jumlah views
 		`ALTER TABLE documents ADD COLUMN IF NOT EXISTS view_count INT DEFAULT 0`,
 
@@ -117,7 +117,7 @@ func runMigrations(pool *pgxpool.Pool) {
 			ip_address VARCHAR(100) DEFAULT '',
 			visited_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 		)`,
-		`CREATE INDEX IF NOT EXISTS idx_site_visits_ip_date ON site_visits(ip_address, (visited_at::date))`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_site_visits_ip_date ON site_visits(ip_address, CAST(visited_at AT TIME ZONE 'UTC' AS DATE))`,
 		// Tabel site_settings untuk menyimpan pengaturan situs (key-value)
 		`CREATE TABLE IF NOT EXISTS site_settings (
 			key VARCHAR(100) PRIMARY KEY,

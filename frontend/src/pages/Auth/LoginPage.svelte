@@ -20,19 +20,19 @@
 
         try {
             await authService.login(email, password);
-            // Check if there's a redirect destination stored
-            const redirectTo = sessionStorage.getItem("redirectAfterLogin");
-            if (redirectTo && !authService.isMahasiswa()) {
-                // Only redirect to stored destination if user is admin
+            if (authService.isAdmin()) {
+                // Admin selalu diarahkan ke halaman admin
                 sessionStorage.removeItem("redirectAfterLogin");
-                window.location.hash = redirectTo.replace("#", "");
-            } else if (authService.isMahasiswa()) {
-                // Mahasiswa diarahkan ke halaman utama (landing page)
-                sessionStorage.removeItem("redirectAfterLogin");
-                window.location.hash = "/";
-            } else {
-                // Default redirect to admin panel
                 window.location.hash = "/admin";
+            } else {
+                // Mahasiswa: redirect ke halaman yang dituju sebelum login (jika ada)
+                const redirectTo = sessionStorage.getItem("redirectAfterLogin");
+                if (redirectTo) {
+                    sessionStorage.removeItem("redirectAfterLogin");
+                    window.location.hash = redirectTo.replace("#", "");
+                } else {
+                    window.location.hash = "/";
+                }
             }
             window.location.reload();
         } catch (err) {
